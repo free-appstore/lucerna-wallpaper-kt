@@ -27,6 +27,7 @@ class AppEnvironment {
         libraryStore = libraryStore,
         backend = backend,
         onQuit = { quitAction?.invoke() },
+        onTrayIconStyle = { style -> tray?.setStyle(style) },
     )
 
     init {

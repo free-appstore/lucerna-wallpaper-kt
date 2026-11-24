@@ -13,6 +13,22 @@ enum class WallpaperSource {
     COLOR,
 }
 
+/** 菜单栏图标的配色：彩色萤火虫，或纯白剪影。 */
+@Serializable
+enum class TrayIconStyle {
+    @SerialName("color")
+    COLOR,
+
+    @SerialName("mono")
+    MONO;
+
+    val label: String
+        get() = when (this) {
+            COLOR -> "彩色"
+            MONO -> "单色"
+        }
+}
+
 /**
  * 持久化的用户偏好。
  *
@@ -35,6 +51,8 @@ data class Settings(
     val screensaverWallpaper: Boolean = true,
     /** 用户已在系统设置中打开「在所有空间中显示」。 */
     val allSpacesShared: Boolean = false,
+    /** 菜单栏图标配色。 */
+    val trayIconStyle: TrayIconStyle = TrayIconStyle.COLOR,
     /** 导入页上次浏览的目录。 */
     val importDir: String? = null,
 ) {

@@ -5,6 +5,7 @@ import com.lucerna.app.platform.SystemIntegration
 import com.lucerna.core.actions.WallpaperActions
 import com.lucerna.core.model.ColorFill
 import com.lucerna.core.model.Settings
+import com.lucerna.core.model.TrayIconStyle
 import com.lucerna.core.model.WallpaperItem
 import com.lucerna.core.model.WallpaperSource
 import com.lucerna.core.model.WallpaperType
@@ -32,6 +33,7 @@ class AppController(
     private val libraryStore: LibraryStore,
     private val backend: WallpaperBackend,
     private val onQuit: () -> Unit,
+    private val onTrayIconStyle: (TrayIconStyle) -> Unit = {},
 ) : WallpaperActions {
 
     private var settings: Settings = settingsStore.load()
@@ -91,6 +93,12 @@ class AppController(
         settings = settings.copy(allSpacesShared = enabled)
         settingsStore.save(settings)
         if (enabled) MacSharedWallpaper.ensure()
+    }
+
+    override fun setTrayIconStyle(style: TrayIconStyle) {
+        settings = settingsStore.load().copy(trayIconStyle = style)
+        settingsStore.save(settings)
+        onTrayIconStyle(style)
     }
 
     override fun openWallpaperSettings() {

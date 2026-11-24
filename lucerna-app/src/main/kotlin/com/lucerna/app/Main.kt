@@ -28,6 +28,7 @@ import com.lucerna.app.platform.MacNative
 import com.lucerna.app.platform.MacSharedWallpaper
 import com.lucerna.app.platform.MacWallpaperStore
 import com.lucerna.app.platform.WallpaperSmoke
+import com.lucerna.core.model.TrayIconStyle
 import com.lucerna.core.model.WallpaperItem
 import com.lucerna.core.model.WallpaperType
 import com.lucerna.ui.panel.LucernaPanel
@@ -122,6 +123,7 @@ fun main(args: Array<String>) {
 
         DisposableEffect(Unit) {
             val tray = TrayController(
+                initialStyle = environment.settingsStore.load().trayIconStyle,
                 onToggle = {
                     // 点击状态栏：已打开就收起；刚因失焦收起时忽略这次点击
                     if (panelVisible) {
@@ -285,6 +287,10 @@ fun main(args: Array<String>) {
                     previewItem = it
                     panelVisible = false
                 }
+            }
+            when (System.getenv("LUCERNA_SMOKE_TRAY")?.lowercase()) {
+                "mono" -> state.setTrayIconStyle(TrayIconStyle.MONO)
+                "color" -> state.setTrayIconStyle(TrayIconStyle.COLOR)
             }
             when (System.getenv("LUCERNA_SMOKE_APPLY")?.lowercase()) {
                 "video" -> state.items.firstOrNull { it.type == WallpaperType.VIDEO }?.let {

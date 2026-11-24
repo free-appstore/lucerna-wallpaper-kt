@@ -12,6 +12,7 @@ import com.lucerna.core.media.Importer
 import com.lucerna.core.model.ColorFill
 import com.lucerna.core.model.ColorKind
 import com.lucerna.core.model.LibraryData
+import com.lucerna.core.model.TrayIconStyle
 import com.lucerna.core.model.WallpaperItem
 import com.lucerna.core.model.WallpaperType
 import com.lucerna.core.paths.AppPaths
@@ -65,6 +66,11 @@ class PanelSmokeTest {
         onNodeWithText("登录时启动").assertExists()
         onNodeWithText("屏幕保护程序").assertExists()
         onNodeWithText("在所有空间中显示").assertExists()
+        // 菜单栏图标样式：默认彩色，点「单色」后切换
+        onNodeWithText("菜单栏图标").assertExists()
+        onNodeWithText("单色").performClick()
+        assertEquals(TrayIconStyle.MONO, state.settings.trayIconStyle)
+        assertEquals(TrayIconStyle.MONO, actions.trayIconStyles.last())
 
         // 导入页
         onNodeWithText("导入").performClick()
@@ -139,6 +145,7 @@ class PanelSmokeTest {
 private class RecordingActions : WallpaperActions {
     val appliedItems = mutableListOf<WallpaperItem>()
     val appliedColors = mutableListOf<ColorFill>()
+    val trayIconStyles = mutableListOf<TrayIconStyle>()
 
     override fun applyLibrary(item: WallpaperItem) {
         appliedItems += item
@@ -154,6 +161,9 @@ private class RecordingActions : WallpaperActions {
     override fun setLaunchAtLogin(enabled: Boolean) = Unit
     override fun setScreensaverWallpaper(enabled: Boolean) = Unit
     override fun setAllSpacesShared(enabled: Boolean) = Unit
+    override fun setTrayIconStyle(style: TrayIconStyle) {
+        trayIconStyles += style
+    }
     override fun openWallpaperSettings() = Unit
     override fun testScreensaver() = Unit
     override fun openFileLocation(path: String) = Unit

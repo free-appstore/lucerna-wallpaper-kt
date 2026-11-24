@@ -1,14 +1,23 @@
 package com.lucerna.ui.pages
 
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -16,13 +25,17 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lucerna.core.model.TrayIconStyle
 import com.lucerna.core.util.MemoryStats
 import com.lucerna.ui.components.GlassCard
 import com.lucerna.ui.components.GhostButton
@@ -42,6 +55,24 @@ fun SettingsPage(state: LucernaState) {
             .verticalScroll(rememberScrollState())
             .padding(bottom = 12.dp),
     ) {
+        SectionLabel("外观")
+        GlassCard(Modifier.fillMaxWidth()) {
+            Text("菜单栏图标", fontSize = 12.sp, color = LucernaColors.TextPrimary)
+            Text(
+                "彩色是萤火虫本来的配色，单色是纯白剪影；左右滑动切换",
+                fontSize = 10.sp,
+                color = LucernaColors.TextTertiary,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+            Spacer(Modifier.height(10.dp))
+            IconStyleSlider(
+                selected = settings.trayIconStyle,
+                onSelect = state::setTrayIconStyle,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+
+        Spacer(Modifier.height(12.dp))
         SectionLabel("播放")
         GlassCard(Modifier.fillMaxWidth()) {
             ToggleRow(
@@ -167,6 +198,76 @@ fun SettingsPage(state: LucernaState) {
                 fontSize = 9.5.sp,
                 color = LucernaColors.TextTertiary,
             )
+        }
+    }
+}
+
+/**
+ * 两段的水平滑动开关：点一下选中，或者左右拖拽切换。
+ *
+ * 轨道上有一个跟着选项滑动的胶囊，两个选项文字压在胶囊上面。
+ */
+@Composable
+private fun IconStyleSlider(
+    selected: TrayIconStyle,
+    onSelect: (TrayIconStyle) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val options = listOf(TrayIconStyle.COLOR, TrayIconStyle.MONO)
+    val index = options.indexOf(selected).coerceAtLeast(0)
+    val density = LocalDensity.current
+
+    BoxWithConstraints(
+        modifier = modifier
+            .height(32.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color(0x12FFFFFF))
+            .border(1.dp, LucernaColors.Border, RoundedCornerShape(10.dp)),
+    ) {
+        val widthPx = with(density) { maxWidth.toPx() }
+        val segment = maxWidth / options.size
+        val thumbOffset by animateDpAsState(segment * index, label = "trayIconStyle")
+
+        fun pick(x: Float) {
+            val ratio = (x / widthPx).coerceIn(0f, 0.999f)
+            onSelect(options[(ratio * options.size).toInt()])
+        }
+
+        Box(
+            Modifier
+                .offset(x = thumbOffset)
+                .width(segment)
+                .fillMaxHeight()
+                .padding(3.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(LucernaColors.AccentSoft),
+        )
+        Box(
+            Modifier
+                .fillMaxSize()
+                .pointerInput(widthPx) { detectTapGestures { pick(it.x) } }
+                .pointerInput(widthPx) {
+                    detectHorizontalDragGestures { change, _ ->
+                        pick(change.position.x)
+                        change.consume()
+                    }
+                },
+        ) {
+            Row(Modifier.fillMaxSize()) {
+                options.forEachIndexed { optionIndex, option ->
+                    Box(
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            option.label,
+                            fontSize = 11.5.sp,
+                            fontWeight = if (optionIndex == index) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (optionIndex == index) LucernaColors.TextPrimary else LucernaColors.TextTertiary,
+                        )
+                    }
+                }
+            }
         }
     }
 }

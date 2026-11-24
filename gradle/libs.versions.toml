@@ -12,43 +12,45 @@ kotlinx-serialization = "1.13.0"
 mediamp = "0.5.3"
 
 [libraries]
-kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
-kotlin-testJunit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
-junit = { module = "junit:junit", version.ref = "junit" }
+kotlin-test = { group = "org.jetbrains.kotlin", name = "kotlin-test", version.ref = "kotlin" }
+kotlin-testJunit = { group = "org.jetbrains.kotlin", name = "kotlin-test-junit", version.ref = "kotlin" }
+junit = { group = "junit", name = "junit", version.ref = "junit" }
 
-androidx-lifecycle-viewmodelCompose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "androidx-lifecycle" }
-androidx-lifecycle-runtimeCompose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose", version.ref = "androidx-lifecycle" }
+androidx-lifecycle-viewmodelCompose = { group = "org.jetbrains.androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "androidx-lifecycle" }
+androidx-lifecycle-runtimeCompose = { group = "org.jetbrains.androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "androidx-lifecycle" }
 
-compose-runtime = { module = "org.jetbrains.compose.runtime:runtime", version.ref = "compose-multiplatform" }
-compose-foundation = { module = "org.jetbrains.compose.foundation:foundation", version.ref = "compose-multiplatform" }
-compose-material3 = { module = "org.jetbrains.compose.material3:material3", version.ref = "compose-material3" }
-compose-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "compose-multiplatform" }
-compose-components-resources = { module = "org.jetbrains.compose.components:components-resources", version.ref = "compose-multiplatform" }
-compose-ui-tooling-preview = { module = "org.jetbrains.compose.ui:ui-tooling-preview", version.ref = "compose-multiplatform" }
-compose-ui-test-junit4 = { module = "org.jetbrains.compose.ui:ui-test-junit4", version.ref = "compose-multiplatform" }
+compose-runtime = { group = "org.jetbrains.compose.runtime", name = "runtime", version.ref = "compose-multiplatform" }
+compose-foundation = { group = "org.jetbrains.compose.foundation", name = "foundation", version.ref = "compose-multiplatform" }
+compose-material3 = { group = "org.jetbrains.compose.material3", name = "material3", version.ref = "compose-material3" }
+compose-ui = { group = "org.jetbrains.compose.ui", name = "ui", version.ref = "compose-multiplatform" }
+compose-components-resources = { group = "org.jetbrains.compose.components", name = "components-resources", version.ref = "compose-multiplatform" }
+compose-ui-tooling-preview = { group = "org.jetbrains.compose.ui", name = "ui-tooling-preview", version.ref = "compose-multiplatform" }
+compose-ui-test-junit4 = { group = "org.jetbrains.compose.ui", name = "ui-test-junit4", version.ref = "compose-multiplatform" }
 
-kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
-kotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "kotlinx-coroutines" }
-kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
+kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
+kotlinx-coroutines-swing = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-swing", version.ref = "kotlinx-coroutines" }
+kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
 
-coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil3" }
-mediamp-all = { module = "org.openani.mediamp:mediamp-all", version.ref = "mediamp" }
-mediamp-mpv-runtime = { module = "org.openani.mediamp:mediamp-mpv-runtime", version.ref = "mediamp" }
+coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil3" }
+mediamp-all = { group = "org.openani.mediamp", name = "mediamp-all", version.ref = "mediamp" }
+mediamp-mpv-runtime = { group = "org.openani.mediamp", name = "mediamp-mpv-runtime", version.ref = "mediamp" }
 
-jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
-jna-platform = { module = "net.java.dev.jna:jna-platform", version.ref = "jna" }
-dd-plist = { module = "com.googlecode.plist:dd-plist", version.ref = "dd-plist" }
+jna = { group = "net.java.dev.jna", name = "jna", version.ref = "jna" }
+jna-platform = { group = "net.java.dev.jna", name = "jna-platform", version.ref = "jna" }
+dd-plist = { group = "com.googlecode.plist", name = "dd-plist", version.ref = "dd-plist" }
 
 [bundles]
 lucerna-core = [
     "kotlinx-coroutines-core",
     "kotlinx-serialization-json"
 ]
+
 lucerna-media = [
     "mediamp-all",
     "coil-compose",
     "kotlinx-coroutines-core"
 ]
+
 lucerna-ui = [
     "compose-runtime",
     "compose-foundation",
@@ -59,12 +61,31 @@ lucerna-ui = [
     "androidx-lifecycle-viewmodelCompose",
     "androidx-lifecycle-runtimeCompose",
     "coil-compose",
-    "mediamp-all",
+    "mediamp-all"
 ]
-lucerna-app = ["jna", "jna-platform", "dd-plist", "kotlinx-coroutines-swing", "mediamp-all", "coil-compose"]
-lucerna-media-runtime = ["mediamp-mpv-runtime"]
-lucerna-test = ["kotlin-test", "kotlin-testJunit", "junit"]
-lucerna-ui-test = ["compose-ui-test-junit4"]
+
+lucerna-app = [
+    "jna",
+    "jna-platform",
+    "dd-plist",
+    "kotlinx-coroutines-swing",
+    "mediamp-all",
+    "coil-compose"
+]
+
+lucerna-media-runtime = [
+    "mediamp-mpv-runtime"
+]
+
+lucerna-test = [
+    "kotlin-test",
+    "kotlin-testJunit",
+    "junit"
+]
+
+lucerna-ui-test = [
+    "compose-ui-test-junit4"
+]
 
 [plugins]
 compose-multiplatform = { id = "org.jetbrains.compose", version.ref = "compose-multiplatform" }

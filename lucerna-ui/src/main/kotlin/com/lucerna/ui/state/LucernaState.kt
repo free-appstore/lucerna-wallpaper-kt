@@ -8,6 +8,7 @@ import com.lucerna.core.media.Importer
 import com.lucerna.core.media.deleteLibraryFiles
 import com.lucerna.core.model.ColorFill
 import com.lucerna.core.model.Settings
+import com.lucerna.core.model.TrayIconStyle
 import com.lucerna.core.model.WallpaperItem
 import com.lucerna.core.model.WallpaperSource
 import com.lucerna.core.model.WallpaperType
@@ -185,6 +186,13 @@ class LucernaState(
         } else {
             "已关闭多空间同步"
         }
+    }
+
+    fun setTrayIconStyle(style: TrayIconStyle) {
+        settings = settings.copy(trayIconStyle = style)
+        persistSettings()
+        actions.setTrayIconStyle(style)
+        toast = "菜单栏图标已切换为${style.label}"
     }
 
     fun openWallpaperSettings() {

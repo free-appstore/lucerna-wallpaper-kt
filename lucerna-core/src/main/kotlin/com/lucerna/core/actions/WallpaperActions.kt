@@ -1,6 +1,7 @@
 package com.lucerna.core.actions
 
 import com.lucerna.core.model.ColorFill
+import com.lucerna.core.model.TrayIconStyle
 import com.lucerna.core.model.WallpaperItem
 
 /**
@@ -17,6 +18,7 @@ interface WallpaperActions {
     fun setLaunchAtLogin(enabled: Boolean)
     fun setScreensaverWallpaper(enabled: Boolean)
     fun setAllSpacesShared(enabled: Boolean)
+    fun setTrayIconStyle(style: TrayIconStyle)
     fun openWallpaperSettings()
     fun testScreensaver()
     fun openFileLocation(path: String)
