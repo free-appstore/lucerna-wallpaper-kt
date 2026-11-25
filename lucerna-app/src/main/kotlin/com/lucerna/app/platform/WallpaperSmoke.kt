@@ -11,16 +11,15 @@ import java.io.File
 import java.util.concurrent.TimeUnit
 
 /**
- * 冒烟测试：真的改系统壁纸，回读校验后恢复。
+ * 冒烟测试：真的换壁纸，回读校验后恢复。
  *
- * 每次设置都必须满足两条：
- * 1. 壁纸库里**每个桌面**（每个屏幕、每个 Space，含调度中心里没显示出来的）都换成新图；
- * 2. **每块连接的屏幕**回读到的壁纸路径都是新图。
+ * 桌面壁纸层在工作时（macOS 新方案）校验：
+ * 1. 壁纸层里当前显示的图 = 新图；
+ * 2. 每块屏幕都有一个壁纸窗口，**层级在系统壁纸之上、桌面图标之下**（-2147483622 左右）；
+ * 3. 连续换三张图（含换回同一张）都不需要重启任何系统服务。
  *
- * 为了证明不是「一会儿行一会儿不行」，会连续换三张图（含换回同一张），每一轮都校验。
+ * 走系统壁纸兜底时，则回读壁纸库里每个桌面的配置与每块屏幕的壁纸路径。
  * [simulateFullscreen] 为 true 时另起一个子进程显示假的全屏窗口，模拟微信全屏的情形。
- *
- * 只改变壁纸十几秒，结束后壁纸库与原壁纸都会恢复。
  */
 object WallpaperSmoke {
 
@@ -33,12 +32,19 @@ object WallpaperSmoke {
         val backend = PlatformWallpapers.create()
         val macos = DesktopOs.current == DesktopOs.MACOS
         val screens = if (macos) MacNative.screenCount() else 0
+        val layerBackend = backend as? MacWallpaperBackend
         val originalScreenImages = (0 until screens).map { MacNative.desktopImagePath(it) }
+        val desktopLevel = MacNative.desktopLayerLevel()
+        val iconLevel = MacNative.desktopIconLevel()
+        // 桌面层模式：记下原来层里那张图，结束时画回去（全程不碰系统壁纸）
+        val originalLayerImage = layerBackend?.layerImagePath
         val storeBackup = MacWallpaperStore.snapshot()
         val originalStoreImages = MacWallpaperStore.configuredImagePaths()
         println(
             "[Lucerna] smoke wallpaper: backend=${backend.name}, screens=$screens, " +
-                "store-entries=${originalStoreImages.size}, simulate-fullscreen=$simulateFullscreen",
+                "store-entries=${originalStoreImages.size}, " +
+                "desktopLevel=$desktopLevel iconLevel=$iconLevel " +
+                "simulate-fullscreen=$simulateFullscreen",
         )
 
         val images = listOf(
@@ -65,32 +71,59 @@ object WallpaperSmoke {
             rounds.forEachIndexed { index, image ->
                 val startedAt = System.currentTimeMillis()
                 val applied = backend.applyImage(image.absolutePath)
-                val screensMatched = waitForScreens(image, screens)
-                val (storeMatched, storeTotal) = countStore(image)
                 val elapsed = System.currentTimeMillis() - startedAt
-                val roundOk = applied &&
-                    storeTotal > 0 && storeMatched == storeTotal &&
-                    (screens == 0 || screensMatched == screens)
+
+                // 桌面壁纸层模式：校验层里的图 + 每块屏幕都有一个层级正确的壁纸窗口
+                val layer = layerBackend?.takeIf { it.layerActive }
+                val roundOk: Boolean
+                val detail: String
+                if (layer != null) {
+                    // WindowServer 记录窗口层级有一点点延迟，等一小会儿再数
+                    val onLevel = waitForLayerWindows(screens, desktopLevel)
+                    val layerImage = layer.layerImagePath
+                    // 垫底系统壁纸也要是同一张：调度中心/切空间的过渡动画只画系统壁纸
+                    val underlay = waitForSystemWallpaper(image, screens)
+                    detail = "layerWindows=$onLevel/${layer.layerWindowCount} level=$desktopLevel " +
+                        "underlay=$underlay/$screens image=${layerImage?.let { File(it).name }}"
+                    roundOk = applied &&
+                        screens == layer.layerWindowCount &&
+                        onLevel >= screens &&
+                        underlay >= screens &&
+                        layerImage != null &&
+                        samePath(layerImage, image.absolutePath)
+                } else {
+                    val screensMatched = waitForScreens(image, screens)
+                    val (storeMatched, storeTotal) = countStore(image)
+                    detail = "desktops=$storeMatched/$storeTotal screens=$screensMatched/$screens"
+                    roundOk = applied &&
+                        (screens == 0 || screensMatched == screens) &&
+                        storeTotal > 0 && storeMatched == storeTotal
+                }
                 results.add(roundOk)
                 println(
-                    "[Lucerna] smoke round ${index + 1}: applied=$applied " +
-                        "desktops=$storeMatched/$storeTotal screens=$screensMatched/$screens " +
-                        "elapsed=${elapsed}ms ${if (roundOk) "OK" else "FAIL"}",
+                    "[Lucerna] smoke round ${index + 1}: applied=$applied layer=${layer != null} " +
+                        "$detail elapsed=${elapsed}ms ${if (roundOk) "OK" else "FAIL"}",
                 )
-                if (!roundOk) {
-                    val readback = (0 until screens).map { MacNative.desktopImagePath(it) }
-                    println("[Lucerna] smoke round ${index + 1}: screens=$readback expected=${image.absolutePath}")
-                }
             }
         } catch (error: Exception) {
             println("[Lucerna] smoke wallpaper failed: ${error.message}")
             results.add(false)
         } finally {
             fake?.let { stop(it) }
+            if (layerBackend?.layerActive == true) {
+                // 层模式：把原来那张图画回层里，再恢复系统壁纸（垫底那张）和壁纸库
+                originalLayerImage?.let { layerBackend.applyImage(it) }
+            }
             restore(storeBackup, originalScreenImages, screens)
         }
 
         val finalScreenImages = (0 until screens).map { MacNative.desktopImagePath(it) }
+        // 测试开始前层里没有图（第一次启动）时不需要恢复
+        val layerRestored = when {
+            layerBackend == null -> true
+            originalLayerImage == null -> true
+            else -> layerBackend.layerImagePath?.let { samePath(it, originalLayerImage) } == true
+        }
         val screensRestored = (0 until screens).count {
             samePath(finalScreenImages[it], originalScreenImages[it])
         }
@@ -98,7 +131,7 @@ object WallpaperSmoke {
         val smokeLeft = finalStoreImages.count { image -> rounds.any { samePath(image, it.absolutePath) } }
         val foreign = finalStoreImages.count { image -> originalStoreImages.none { samePath(image, it) } }
         val storeRestored = smokeLeft == 0 && foreign == 0
-        val restoreOk = screensRestored == screens && storeRestored
+        val restoreOk = screensRestored == screens && storeRestored && layerRestored
         val detectedOk = !simulateFullscreen || fullscreenDetected
         val ok = results.isNotEmpty() && results.all { it } && restoreOk && detectedOk
 
@@ -114,6 +147,30 @@ object WallpaperSmoke {
     private fun render(paths: AppPaths, name: String, fill: ColorFill): File? {
         val target = paths.renderDir.resolve(name).toFile()
         return ColorRenderer.writePng(fill, 1600, 900, target)
+    }
+
+    /** 等系统壁纸（垫底那张）也变成目标图，返回匹配的屏幕数。 */
+    private fun waitForSystemWallpaper(image: File, screens: Int): Int {
+        val deadline = System.currentTimeMillis() + 3000
+        var matched = 0
+        while (System.currentTimeMillis() < deadline) {
+            matched = (0 until screens).count { samePath(MacNative.desktopImagePath(it), image.absolutePath) }
+            if (matched >= screens) return matched
+            Thread.sleep(150)
+        }
+        return matched
+    }
+
+    /** 等窗口服务器把壁纸层的窗口都登记到正确层级上，返回达到该层级的窗口数。 */
+    private fun waitForLayerWindows(screens: Int, level: Int): Int {
+        val deadline = System.currentTimeMillis() + 3000
+        var matched = 0
+        while (System.currentTimeMillis() < deadline) {
+            matched = MacFullscreenDetector.ownWindows().count { it.second == level }
+            if (matched >= screens) return matched
+            Thread.sleep(120)
+        }
+        return matched
     }
 
     /** 等所有屏幕都回读成这张图，返回最终匹配的屏幕数。 */

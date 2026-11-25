@@ -100,8 +100,8 @@ internal object MacFullscreenDetector {
     }
 
     /** 用二进制 plist 中转：CFDictionary 的键值直接交给 dd-plist 解析，省掉一整套 C 调用。 */
-    private fun windowList(): List<NSDictionary> {
-        val list = copyWindowInfo.invokePointer(arrayOf<Any?>(WINDOW_LIST_OPTIONS, 0))
+    private fun windowList(listOptions: Int = WINDOW_LIST_OPTIONS): List<NSDictionary> {
+        val list = copyWindowInfo.invokePointer(arrayOf<Any?>(listOptions, 0))
             ?: return emptyList()
         if (Pointer.nativeValue(list) == 0L) return emptyList()
         try {
@@ -123,6 +123,23 @@ internal object MacFullscreenDetector {
             release.invokeVoid(arrayOf<Any?>(list))
         }
     }
+
+    /**
+     * 本进程所有窗口的 (bounds, 层级)，冒烟测试用来确认桌面壁纸层的窗口真的压在
+     * 系统壁纸之上、桌面图标之下。
+     */
+    fun ownWindows(): List<Pair<Rectangle, Int>> = runCatching {
+        windowList(listOptions = 0).mapNotNull { window ->
+            val pid = (window.objectForKey("kCGWindowOwnerPID") as? NSNumber)?.longValue()
+                ?: return@mapNotNull null
+            if (pid != ownPid) return@mapNotNull null
+            val layer = (window.objectForKey("kCGWindowLayer") as? NSNumber)?.intValue()
+                ?: return@mapNotNull null
+            val bounds = (window.objectForKey("kCGWindowBounds") as? NSDictionary)?.toRectangle()
+                ?: return@mapNotNull null
+            bounds to layer
+        }
+    }.getOrElse { emptyList() }
 
     /** 系统进程（菜单栏、Dock、窗口服务…）的窗口会盖住整屏，但不是「全屏 app」。 */
     private fun isSystemProcess(pid: Long): Boolean = runCatching {

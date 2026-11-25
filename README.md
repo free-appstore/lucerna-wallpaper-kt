@@ -23,7 +23,7 @@
 - **导入**：面板内嵌文件浏览器（不是系统对话框），支持 JPG/PNG/WebP/BMP/GIF/TIFF 与 MP4/MOV/MKV/WebM/AVI 等
 - **设置**：菜单栏图标（彩色 / 单色纯白，左右滑动切换）、视频音量、禁用壁纸、登录时启动、屏幕保护程序与立即测试
 - **预览**：图片用 Coil3，视频用 MediaMP；滚轮或 +/- 缩放 1–8 倍，拖拽平移
-- 壁纸只写系统壁纸，不创建任何额外窗口；视频取一帧封面作为静态壁纸
+- 壁纸画在每块屏幕的「桌面壁纸层」窗口里（macOS），不写系统壁纸；视频取一帧封面作为静态壁纸
 - 右上角电源按钮退出程序
 
 ## 运行
@@ -41,14 +41,15 @@
 ./gradlew :lucerna-core:test :lucerna-ui:test
 ```
 
-应用冒烟测试（会短暂修改系统壁纸并恢复）：
+应用冒烟测试（会短暂换壁纸再恢复，不改系统壁纸）：
 
 ```bash
 ./gradlew :lucerna-app:run --args="--smoke-wallpaper"
 ```
 
-连续换三张图（含换回同一张），每一轮都要求：壁纸库里**每个桌面**（每块屏幕、每个 Space）
-都是新图，且**每块连接的屏幕**回读到的壁纸也是新图。结束后恢复壁纸库与所有屏幕的原壁纸。
+连续换三张图（含换回同一张），每一轮都校验：壁纸层里显示的是新图，且**每块屏幕都有一个
+层级正确的壁纸窗口**（在系统壁纸之上、桌面图标之下）。走系统壁纸兜底时则校验壁纸库里
+每个桌面的配置和每块屏幕的壁纸路径。结束后恢复原壁纸。
 `--smoke-fullscreen` 会另起一个子进程显示一块假的全屏窗口，模拟微信这类全屏 app，
 验证有屏幕处于全屏时结果一样：
 
@@ -83,16 +84,31 @@ LUCERNA_SMOKE=1 LUCERNA_SMOKE_TAB=color ./gradlew :lucerna-app:run
 
 ## 平台说明
 
-- **macOS**：`NSWorkspace` 只能改「当前显示的那个 Space」，所以设置壁纸分两步：
-  1. `NSWorkspace` 把图片设到所有连接的屏幕（当前显示的桌面立刻生效）；
-  2. 直接改壁纸库 `~/Library/Application Support/com.apple.wallpaper/Store/Index.plist`，
-     把所有屏幕、所有桌面（Mission Control 里的每个 Space，包括被全屏 app 占着、
-     当前没显示的桌面，以及 SystemDefault / AllSpacesAndDisplays）的图片配置一起换成新图，
-     然后给 `WallpaperAgent` 发 `SIGHUP` 让它重新读取并重绘。
+- **macOS**：不再改系统壁纸，自己在桌面上铺一层「壁纸层」：
+  - 每块屏幕一个无边框窗口，层级是 `CGWindowLevelForKey(kCGDesktopWindowLevelKey) + 1`
+    （实测 `-2147483622`）：**系统壁纸之上、桌面图标（`-2147483603`）之下**，
+    所以桌面图标、普通程序窗口、台前调度、程序坞全部压在它上面；
+  - `ignoresMouseEvents = YES`：鼠标事件全部穿透给系统，壁纸层不拦截任何点击；
+  - 只 `orderBack:`，从不 `orderFront:`：壁纸层永远不会被提到别人上面；
+  - `canJoinAllSpaces + stationary + ignoresCycle`：出现在所有桌面（Mission Control 的每个 Space），
+    切换桌面不重建、不闪；不进窗口切换器、无阴影、不抢焦点、失去激活也不隐藏；
+  - 换壁纸 = 换窗口里的图片（等比铺满），**不重启任何系统服务**，实测 0.2 秒左右、零灰屏，
+    所有屏幕（每块连接的显示器各一个窗口）和所有桌面同时生效；
+  - 不进全屏 Space（不加 `fullScreenAuxiliary`）：全屏 app 绝不会被壁纸盖住；
+    全屏 Space 里本来也看不到桌面，过渡动画靠「垫底的同款系统壁纸」兜住；
+  - 有 2 秒一次的屏幕巡检：插上/拔掉显示器、改分辨率都会自动补建/销毁窗口；
+  - 建窗口时先把层级和「加入所有 Space」设好再显示：否则在某个屏幕被全屏 app 占着时
+    建出来的窗口会被绑在那个全屏 Space 上，回到桌面后就看不到（那块屏会漏出系统壁纸）；
+  - **系统壁纸会同步成同一张作为「垫底」**：调度中心 / 切空间的过渡动画是 macOS 用
+    Space 快照合成的，桌面层窗口不在那份快照里，动画那几帧只会画系统壁纸；
+    每次换壁纸顺手做一次 `NSWorkspace` 调用（约 0.1 秒，不重启服务、不闪屏），
+    平时完全被壁纸层盖住，只有过渡动画漏出来的瞬间看到的也是同一张图。
 
-  改完会回读校验「每个桌面都是这张图」，不通过就自动重来（最多 3 次）；同一张图重复设置时
-  走快路径，不重启壁纸服务。改之前自动备份 `Index.plist.lucerna-backup`，出错时回滚。
-  设置页的「在所有空间中显示」开关仍然可用（会尝试自动打开系统设置里对应的选项）。
+  窗口层级只能在 AppKit 主线程上改：先用 AWT 的 `CPlatformWindow` 拿到 NSWindow 指针，
+  再用 `objc_msgSend` 设层级/行为（JVM 需要
+  `--add-opens java.desktop/java.awt,java.desktop/sun.lwawt,java.desktop/sun.lwawt.macosx`，
+  已在 `lucerna-app/build.gradle.kts` 里配好）。万一拿不到 NSWindow 或被系统策略挡住，
+  自动退回「系统壁纸 + 壁纸库同步」的兜底路径（那条路径会短暂灰屏）。
   视频封面用系统自带的 Quick Look 生成。
 - **Windows**：`SystemParametersInfoW` 设置壁纸并写入「填充」样式。
 - **Linux**：按桌面环境依次尝试 gsettings、plasma-apply-wallpaperimage、xfconf-query、feh、nitrogen。

@@ -30,7 +30,7 @@ internal object MacWallpaperStore {
     private const val IMAGE_PROVIDER = "com.apple.wallpaper.choice.image"
 
     /** 壁纸库用这个字符串表示「没有值」，写回时要原样保留。 */
-    private const val NULL_VALUE = "\$null"
+    private const val NULL_VALUE = $$"$null"
 
     private const val MAX_SYNC_ATTEMPTS = 3
     private const val AGENT_RESTART_TIMEOUT_MS = 5000L
