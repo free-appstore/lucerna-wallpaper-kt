@@ -45,6 +45,8 @@ import com.lucerna.ui.state.LucernaState
 import com.lucerna.ui.theme.LucernaColors
 import kotlin.math.roundToInt
 
+private val TRAY_ICON_OPTIONS = listOf(TrayIconStyle.COLOR, TrayIconStyle.MONO)
+
 /** 「设置」页：声音、禁用、登录启动、屏保与存储位置。 */
 @Composable
 fun SettingsPage(state: LucernaState) {
@@ -213,8 +215,7 @@ private fun IconStyleSlider(
     onSelect: (TrayIconStyle) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val options = listOf(TrayIconStyle.COLOR, TrayIconStyle.MONO)
-    val index = options.indexOf(selected).coerceAtLeast(0)
+    val index = TRAY_ICON_OPTIONS.indexOf(selected).coerceAtLeast(0)
     val density = LocalDensity.current
 
     BoxWithConstraints(
@@ -225,12 +226,12 @@ private fun IconStyleSlider(
             .border(1.dp, LucernaColors.Border, RoundedCornerShape(10.dp)),
     ) {
         val widthPx = with(density) { maxWidth.toPx() }
-        val segment = maxWidth / options.size
+        val segment = maxWidth / TRAY_ICON_OPTIONS.size
         val thumbOffset by animateDpAsState(segment * index, label = "trayIconStyle")
 
         fun pick(x: Float) {
             val ratio = (x / widthPx).coerceIn(0f, 0.999f)
-            onSelect(options[(ratio * options.size).toInt()])
+            onSelect(TRAY_ICON_OPTIONS[(ratio * TRAY_ICON_OPTIONS.size).toInt()])
         }
 
         Box(
@@ -254,7 +255,7 @@ private fun IconStyleSlider(
                 },
         ) {
             Row(Modifier.fillMaxSize()) {
-                options.forEachIndexed { optionIndex, option ->
+                TRAY_ICON_OPTIONS.forEachIndexed { optionIndex, option ->
                     Box(
                         modifier = Modifier.weight(1f).fillMaxHeight(),
                         contentAlignment = Alignment.Center,

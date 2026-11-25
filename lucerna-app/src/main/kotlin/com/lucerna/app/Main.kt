@@ -3,14 +3,7 @@ package com.lucerna.app
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -22,24 +15,19 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
-import com.lucerna.app.platform.FakeFullscreenWindow
-import com.lucerna.app.platform.MacFullscreenDetector
-import com.lucerna.app.platform.MacNative
-import com.lucerna.app.platform.MacSharedWallpaper
-import com.lucerna.app.platform.MacWallpaperStore
-import com.lucerna.app.platform.WallpaperSmoke
+import com.lucerna.app.platform.*
 import com.lucerna.core.model.TrayIconStyle
 import com.lucerna.core.model.WallpaperItem
 import com.lucerna.core.model.WallpaperType
 import com.lucerna.ui.panel.LucernaPanel
 import com.lucerna.ui.preview.PreviewWindowContent
-import com.lucerna.ui.state.LucernaState
 import com.lucerna.ui.state.PanelTab
 import com.lucerna.ui.theme.LucernaTheme
 import kotlinx.coroutines.delay
 import java.awt.Dimension
 import java.awt.event.WindowEvent
 import java.awt.event.WindowFocusListener
+import kotlin.time.Duration.Companion.seconds
 
 private const val PANEL_WIDTH = 392
 private const val PANEL_HEIGHT = 700
@@ -58,7 +46,7 @@ fun main(args: Array<String>) {
         }
         println(
             "[Lucerna] pointer-screen-fullscreen=${MacFullscreenDetector.isPointerScreenFullscreen()} " +
-                "any-screen-fullscreen=${covered.isNotEmpty()}",
+                    "any-screen-fullscreen=${covered.isNotEmpty()}",
         )
         kotlin.system.exitProcess(0)
     }
@@ -279,10 +267,12 @@ fun main(args: Array<String>) {
                     previewItem = it
                     panelVisible = false
                 }
+
                 "image" -> state.items.firstOrNull { it.type == WallpaperType.IMAGE }?.let {
                     previewItem = it
                     panelVisible = false
                 }
+
                 "first" -> state.items.firstOrNull()?.let {
                     previewItem = it
                     panelVisible = false
@@ -297,23 +287,25 @@ fun main(args: Array<String>) {
                     panelVisible = false
                     state.applyItem(it)
                 }
+
                 "image" -> state.items.firstOrNull { it.type == WallpaperType.IMAGE }?.let {
                     panelVisible = false
                     state.applyItem(it)
                 }
+
                 "first" -> state.items.firstOrNull()?.let {
                     panelVisible = false
                     state.applyItem(it)
                 }
             }
             if (smoke) {
-                delay(1500)
+                delay(1.5.seconds)
                 println("[Lucerna] SMOKE_PANEL_READY")
                 if (System.getenv("LUCERNA_SMOKE_REOPEN") == "1") {
-                    delay(1200)
+                    delay(1.2.seconds)
                     panelVisible = false
                     dismissGuard.markHidden()
-                    delay(900)
+                    delay(0.9.seconds)
                     showPanel()
                     println("[Lucerna] SMOKE_REOPENED")
                 }

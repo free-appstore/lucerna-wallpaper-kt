@@ -97,7 +97,8 @@ object WallpaperSmoke {
                         samePath(layerImage, image.absolutePath)
                 } else {
                     val screensMatched = waitForScreens(image, screens)
-                    val (storeMatched, storeTotal) = countStore(image)
+                    // 壁纸库同步在后台线程里做（还要重启 WallpaperAgent），等它落盘再比对
+                    val (storeMatched, storeTotal) = waitForStore(image)
                     detail = "desktops=$storeMatched/$storeTotal screens=$screensMatched/$screens"
                     roundOk = applied &&
                         (screens == 0 || screensMatched == screens) &&
@@ -114,11 +115,12 @@ object WallpaperSmoke {
             results.add(false)
         } finally {
             fake?.let { stop(it) }
-            if (layerBackend?.layerActive == true) {
-                // 先等排队中的系统壁纸同步跑完，再换回原图，免得它把恢复结果覆盖掉
-                layerBackend.awaitStoreSync()
-                originalLayerImage?.let { layerBackend.applyImage(it) }
-                layerBackend.awaitStoreSync()
+            layerBackend?.let { backend ->
+                // 不管壁纸层现在显示没显示（有屏幕全屏时窗口是藏起来的），
+                // 都要先把后台的系统壁纸同步排空，否则它会把下面的恢复结果覆盖掉
+                backend.awaitStoreSync()
+                originalLayerImage?.let { backend.applyImage(it) }
+                backend.awaitStoreSync()
             }
             restore(storeBackup, originalScreenImages, screens)
         }
@@ -205,12 +207,6 @@ object WallpaperSmoke {
             Thread.sleep(200)
         }
         return matched
-    }
-
-    /** (指向这张图的桌面配置数, 桌面配置总数)。 */
-    private fun countStore(image: File): Pair<Int, Int> {
-        val paths = MacWallpaperStore.configuredImagePaths()
-        return paths.count { samePath(it, image.absolutePath) } to paths.size
     }
 
     /** 恢复壁纸库（所有桌面）与每块屏幕原来看得见的壁纸。 */

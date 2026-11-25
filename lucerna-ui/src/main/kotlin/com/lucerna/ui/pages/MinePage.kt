@@ -210,7 +210,6 @@ private fun PhotoGrid(items: List<WallpaperItem>, state: LucernaState) {
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun WallpaperCard(
     item: WallpaperItem,

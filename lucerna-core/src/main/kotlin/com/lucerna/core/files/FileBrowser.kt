@@ -27,30 +27,34 @@ object FileBrowser {
 
     private const val ENTRY_LIMIT = 3000
 
-    /** 列出目录内容：文件夹在前，文件按名称排序。 */
+    /** 目录里可能有几万个文件，按名字排序时不额外生成小写副本。 */
+    private val NAME_ORDER = compareBy(String.CASE_INSENSITIVE_ORDER, File::getName)
+
+    /** 列出目录内容：文件夹在前，文件按名称排序，最多返回 [limit] 项。 */
     fun list(dir: File, filter: ImportFilter, limit: Int = ENTRY_LIMIT): List<BrowserEntry> {
         val children = dir.listFiles() ?: return emptyList()
-        val directories = ArrayList<BrowserEntry>()
-        val files = ArrayList<BrowserEntry>()
-        children.asSequence()
-            .filterNot { it.isHidden }
-            .sortedBy { it.name.lowercase() }
-            .forEach { child ->
-                if (child.isDirectory) {
-                    directories += BrowserEntry(child.name, child.absolutePath, true, 0L, null)
-                } else {
-                    val type = MediaFormats.typeOf(child) ?: return@forEach
-                    val matches = when (filter) {
-                        ImportFilter.ALL -> true
-                        ImportFilter.IMAGE -> type == WallpaperType.IMAGE
-                        ImportFilter.VIDEO -> type == WallpaperType.VIDEO
-                    }
-                    if (matches) {
-                        files += BrowserEntry(child.name, child.absolutePath, false, child.length(), type)
-                    }
-                }
-            }
-        return (directories + files).take(limit)
+        children.sortWith(NAME_ORDER)
+        // 边遍历边判断上限：超出部分不必构造 BrowserEntry
+        val result = ArrayList<BrowserEntry>(minOf(children.size, limit))
+        for (child in children) {
+            if (result.size >= limit) return result
+            if (child.isHidden || !child.isDirectory) continue
+            result += BrowserEntry(child.name, child.absolutePath, true, 0L, null)
+        }
+        for (child in children) {
+            if (result.size >= limit) break
+            if (child.isHidden || child.isDirectory) continue
+            val type = MediaFormats.typeOf(child) ?: continue
+            if (!filter.matches(type)) continue
+            result += BrowserEntry(child.name, child.absolutePath, false, child.length(), type)
+        }
+        return result
+    }
+
+    private fun ImportFilter.matches(type: WallpaperType): Boolean = when (this) {
+        ImportFilter.ALL -> true
+        ImportFilter.IMAGE -> type == WallpaperType.IMAGE
+        ImportFilter.VIDEO -> type == WallpaperType.VIDEO
     }
 
     /** 常用位置，只返回真实存在的目录。 */

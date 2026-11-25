@@ -6,7 +6,7 @@ import java.awt.Component
 import java.awt.Window
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * 通过 JNA 直接调用 AppKit，避免依赖 AppleScript 的自动化授权弹窗。
@@ -14,6 +14,9 @@ import java.util.concurrent.atomic.AtomicLong
  * 只用到 objc_msgSend 的对象参数与 NSInteger 参数，不处理结构体返回值。
  */
 internal object MacNative {
+
+    /** 「显示菜单栏背景」读一次缓存两秒。 */
+    private const val MENU_BAR_SETTING_TTL_MS = 2000L
 
     private val libObjc: NativeLibrary by lazy { NativeLibrary.getInstance("/usr/lib/libobjc.A.dylib") }
     private val msgSend by lazy { libObjc.getFunction("objc_msgSend") }
@@ -50,13 +53,13 @@ internal object MacNative {
 
     /** 把图片设到所有屏幕。 */
     fun applyDesktopImage(path: String): Boolean {
-        val results = applyDesktopImagePerScreen(path)
-        return results.isNotEmpty() && results.all { it }
+        val count = screenCount()
+        if (count <= 0) return false
+        for (index in 0 until count) {
+            if (!applyDesktopImageToScreen(index, path)) return false
+        }
+        return true
     }
-
-    /** 逐块屏幕设置桌面图片，返回每块屏幕是否成功（冒烟测试用来逐屏校验）。 */
-    fun applyDesktopImagePerScreen(path: String): List<Boolean> =
-        (0 until screenCount()).map { applyDesktopImageToScreen(it, path) }
 
     private fun sendScreen(
         workspace: Pointer,
@@ -145,44 +148,74 @@ internal object MacNative {
      * 返回 NSWindow 指针，失败返回 null（调用方会退回系统壁纸）。
      */
     fun tuneAsDesktopLayer(window: Window, level: Int = desktopLayerLevel()): Long? {
-        val work = { applyDesktopLayerAttributes(window, level) }
+        val pointer = runOnAppKitThread { applyDesktopLayerAttributes(window, level) }
+        if (pointer == null) println("[Lucerna] tune: window attributes not applied")
+        return pointer
+    }
+
+    /**
+     * 「系统设置 → 菜单栏 → 显示菜单栏背景」是否打开（`SLSMenuBarUseBlurredAppearance`）。
+     *
+     * 关闭时菜单栏是透明的，直接透出壁纸层的新图，不需要让开那一条给系统采样。
+     * 读一次后缓存两秒，连续点壁纸时不用每次都起一个进程。
+     */
+    fun menuBarBackgroundEnabled(): Boolean {
+        val now = System.currentTimeMillis()
+        if (now - menuBarBackgroundCheckedAt < MENU_BAR_SETTING_TTL_MS) return cachedMenuBarBackground
+        val enabled = runCatching {
+            val process = ProcessBuilder("/usr/bin/defaults", "read", "-g", "SLSMenuBarUseBlurredAppearance")
+                .redirectErrorStream(true)
+                .start()
+            val text = process.inputStream.bufferedReader().use { it.readText() }.trim()
+            process.waitFor() == 0 && text in setOf("1", "true", "TRUE", "YES", "yes")
+        }.getOrElse { false }
+        cachedMenuBarBackground = enabled
+        menuBarBackgroundCheckedAt = now
+        return enabled
+    }
+
+    @Volatile
+    private var cachedMenuBarBackground = false
+
+    @Volatile
+    private var menuBarBackgroundCheckedAt = 0L
+
+    /** 在 AppKit 主线程上执行 [work] 并拿到返回值；不在主线程时投递过去等结果。 */
+    private fun <T : Any> runOnAppKitThread(work: () -> T?): T? {
         if (isAppKitMainThread()) return work()
 
-        val result = AtomicLong(0L)
+        val result = AtomicReference<T?>()
         val latch = CountDownLatch(1)
-        val posted = runCatching {
-            val toolkit = Class.forName("sun.lwawt.macosx.LWCToolkit")
-            val method = toolkit.getDeclaredMethod(
-                "performOnMainThreadAfterDelay",
-                Runnable::class.java,
-                Long::class.javaPrimitiveType,
-            )
-            method.isAccessible = true
-            method.invoke(
-                null,
-                Runnable {
-                    try {
-                        result.set(work() ?: 0L)
-                    } finally {
-                        latch.countDown()
-                    }
-                },
-                0L,
-            )
-            true
-        }.getOrElse { false }
+        val posted = postToAppKitThread {
+            try {
+                result.set(work())
+            } finally {
+                latch.countDown()
+            }
+        }
         if (!posted) {
-            println("[Lucerna] tune: cannot dispatch to AppKit thread")
+            println("[Lucerna] cannot dispatch to AppKit thread")
             return null
         }
         if (!latch.await(3, TimeUnit.SECONDS)) {
-            println("[Lucerna] tune: AppKit thread did not respond")
+            println("[Lucerna] AppKit thread did not respond")
             return null
         }
-        val pointer = result.get()
-        if (pointer == 0L) println("[Lucerna] tune: window attributes not applied")
-        return pointer.takeIf { it != 0L }
+        return result.get()
     }
+
+    /** 投递一个任务到 AppKit 主线程（不等待结果）。 */
+    private fun postToAppKitThread(block: Runnable): Boolean = runCatching {
+        val toolkit = Class.forName("sun.lwawt.macosx.LWCToolkit")
+        val method = toolkit.getDeclaredMethod(
+            "performOnMainThreadAfterDelay",
+            Runnable::class.java,
+            Long::class.javaPrimitiveType,
+        )
+        method.isAccessible = true
+        method.invoke(null, block, 0L)
+        true
+    }.getOrElse { false }
 
     /** 真正改 NSWindow 的属性；只能在 AppKit 主线程上调用。 */
     private fun applyDesktopLayerAttributes(window: Window, level: Int): Long? = runCatching {
@@ -204,7 +237,7 @@ internal object MacNative {
         // 只往下压，不往前提：壁纸层永远待在同层级的最下面，绝不挡住别人
         sendVoid(nsWindow, "orderBack:")
         Pointer.nativeValue(nsWindow)
-    }.onFailure { println("[Lucerna] tune failed: ${it}") }.getOrNull()
+    }.onFailure { println("[Lucerna] tune failed: $it") }.getOrNull()
 
     /** 当前线程是不是 AppKit 主线程（只有它能改 NSWindow）。 */
     private fun isAppKitMainThread(): Boolean = runCatching {

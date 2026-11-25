@@ -26,9 +26,4 @@ object MediaFormats {
     }
 
     fun isSupported(file: File): Boolean = typeOf(file) != null
-
-    /** 文件选择器与导入页共用的过滤描述。 */
-    fun filterLabel(): String =
-        "图片 " + IMAGE_EXTENSIONS.joinToString("、") { it.uppercase() } + "；视频 " +
-            VIDEO_EXTENSIONS.joinToString("、") { it.uppercase() }
 }

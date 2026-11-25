@@ -8,9 +8,9 @@ import com.sun.jna.Native
 import com.sun.jna.Pointer
 import com.sun.jna.platform.win32.Advapi32Util
 import com.sun.jna.platform.win32.WinReg
-import java.awt.GraphicsEnvironment
 import java.io.File
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
@@ -41,7 +41,18 @@ class MacWallpaperBackend : WallpaperBackend {
     private val layer = MacWallpaperLayer()
 
     /**
-     * 壁纸库（所有 Space 的系统壁纸）同步放在独立线程里做：它要重启 WallpaperAgent，比较慢，
+     * 当前 Space 的系统壁纸：一次 NSWorkspace 调用（约 0.1 秒），单独一个线程，
+     * 免得被「壁纸库同步」那种要重启 WallpaperAgent 的慢操作挡住。
+     */
+    private val currentSpaceExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "lucerna-wallpaper-current-space").apply { isDaemon = true }
+    }
+
+    @Volatile
+    private var currentSpaceTarget: String? = null
+
+    /**
+     * 壁纸库（所有 Space 的系统壁纸）同步：要重启 WallpaperAgent，比较慢，
      * 而且连续换壁纸时只有最后一张有意义 —— 队列里过期的请求直接丢掉。
      */
     private val storeSyncExecutor = Executors.newSingleThreadExecutor { runnable ->
@@ -58,13 +69,14 @@ class MacWallpaperBackend : WallpaperBackend {
 
     val layerWindowCount: Int get() = layer.windowCount
 
-    val layerLevel: Int get() = layer.level
+    override fun applyImage(path: String): Boolean = applyImage(path) { false }
 
-    val layerScreens: Int get() = macScreenCount()
-
-    override fun applyImage(path: String): Boolean {
+    /**
+     * @param isStale 连续换壁纸时用来提前收工：新的请求马上会接手这张。
+     */
+    fun applyImage(path: String, isStale: () -> Boolean): Boolean {
         // 1) 桌面壁纸层：所有屏幕立刻换图（不重启服务、零灰屏），这是用户当下看到的那一层
-        val layerOk = layer.apply(path)
+        val layerOk = layer.apply(path, isStale)
         if (!layerOk) {
             println(
                 "[Lucerna] 壁纸层不可用（${layer.error}），本轮只设置系统壁纸。" +
@@ -72,18 +84,46 @@ class MacWallpaperBackend : WallpaperBackend {
             )
         }
 
-        // 2) 系统壁纸（当前 Space）：一次 NSWorkspace 调用，不重启服务
+        // 2) 系统壁纸：壁纸层已经换好了，这一份不必挡住返回，排到后台线程去跟
+        if (layerOk) {
+            if (!isStale()) requestCurrentSpace(path)
+            return true
+        }
+
+        // 壁纸层不可用时退回系统壁纸：这一份必须同步做完，调用方要用返回值判断结果
         val systemOk = MacNative.applyDesktopImage(path) || appleScript(path)
-
-        // 3) 系统壁纸（壁纸库里每个 Space / 每块屏幕）：Mission Control、切换桌面、
-        //    全屏 Space 的快照都取系统壁纸，所以这一份也要一起更新。
-        //    这一步会重启 WallpaperAgent，但桌面已经被壁纸层盖住，灰屏看不到。
         requestStoreSync(path)
-
-        return layerOk || systemOk
+        return systemOk
     }
 
-    /** 排队同步「所有 Space 的系统壁纸」，连续请求只保留最后一个。 */
+    /** 排队设置当前 Space 的系统壁纸，连续请求只保留最后一次。 */
+    private fun requestCurrentSpace(path: String) {
+        currentSpaceTarget = path
+        currentSpaceExecutor.execute {
+            if (currentSpaceTarget != path) return@execute
+            val sync = {
+                if (!MacNative.applyDesktopImage(path) && !appleScript(path)) {
+                    println("[Lucerna] 当前 Space 的系统壁纸设置失败（壁纸层不受影响）")
+                    false
+                } else {
+                    true
+                }
+            }
+            // 打开「显示菜单栏背景」时，系统只在壁纸露出来时才给菜单栏重新采样。
+            // 让开一条菜单栏高度（那条被菜单栏挡着，看不见），系统把壁纸设好后自己就跟上了；
+            // 不再整屏让开，也就没有那一下闪烁。
+            if (MacNative.menuBarBackgroundEnabled()) {
+                layer.withMenuBarStripExposed(MENU_BAR_STRIP_HOLD_MS, sync) { currentSpaceTarget != path }
+            } else {
+                sync()
+            }
+            // 壁纸库同步会重启 WallpaperAgent，把当前 Space 刚画好的壁纸也一起重新加载。
+            // 等菜单栏那边采样完再动壁纸库；即使当前 Space 设置失败，这一步也兜底。
+            if (currentSpaceTarget == path) requestStoreSync(path)
+        }
+    }
+
+    /** 排队同步壁纸库里所有 Space，连续请求只保留最后一次。 */
     private fun requestStoreSync(path: String) {
         storeSyncTarget = path
         storeSyncExecutor.execute {
@@ -93,33 +133,26 @@ class MacWallpaperBackend : WallpaperBackend {
         }
     }
 
-    /** 等排队中的「所有 Space 系统壁纸同步」跑完（冒烟测试收尾用）。 */
+    /** 等排队中的系统壁纸同步跑完（冒烟测试收尾用）。 */
     fun awaitStoreSync(timeoutMs: Long = 15_000) {
+        await(currentSpaceExecutor, timeoutMs)
+        await(storeSyncExecutor, timeoutMs)
+    }
+
+    private fun await(executor: ExecutorService, timeoutMs: Long) {
         val done = CountDownLatch(1)
-        runCatching { storeSyncExecutor.execute { done.countDown() } }
+        runCatching { executor.execute { done.countDown() } }
         done.await(timeoutMs, TimeUnit.MILLISECONDS)
     }
 
-    /** 屏幕数量/位置变化时重建壁纸窗口。 */
-    fun refreshScreens() = layer.refreshScreens()
-
     fun shutdown() {
-        // 退出前把还在排队的那次「系统壁纸同步」做完，别让系统壁纸停在上一张
+        // 先把排队中的「当前 Space」与「壁纸库」同步做完，再销毁壁纸层：
+        // 否则退出后系统壁纸会停在上一张（壁纸层已经不显示了）
         runCatching { awaitStoreSync(3000) }
+        runCatching { currentSpaceExecutor.shutdownNow() }
         runCatching { storeSyncExecutor.shutdownNow() }
         layer.shutdown()
     }
-
-    /** 系统壁纸兜底路径（只在桌面层建不起来时用）：会把壁纸库也写一遍，保证每个桌面都换掉。 */
-    private fun applySystemWallpaper(path: String): Boolean {
-        val applied = MacNative.applyDesktopImage(path) || appleScript(path)
-        val synced = MacWallpaperStore.applyToAllSpaces(path)
-        return applied || synced
-    }
-
-    private fun macScreenCount(): Int = GraphicsEnvironment.getLocalGraphicsEnvironment()
-        .screenDevices
-        .size
 
     private fun appleScript(path: String): Boolean = runCatching {
         val escaped = path.replace("\\", "\\\\").replace("\"", "\\\"")
@@ -129,6 +162,14 @@ class MacWallpaperBackend : WallpaperBackend {
             .start()
             .waitFor() == 0
     }.getOrElse { false }
+
+    private companion object {
+        /**
+         * 系统壁纸设好后，让菜单栏后面那一条再露一会儿，等 macOS 重新采样菜单栏背景。
+         * 露出的部分被菜单栏窗口挡着，用户看不到。
+         */
+        const val MENU_BAR_STRIP_HOLD_MS = 1200L
+    }
 }
 
 /** Windows：SystemParametersInfo 设置壁纸，并用注册表指定「填充」样式。 */

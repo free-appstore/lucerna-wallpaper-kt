@@ -7,7 +7,7 @@ import com.lucerna.core.actions.WallpaperActions
 import com.lucerna.core.media.Importer
 import com.lucerna.core.media.deleteLibraryFiles
 import com.lucerna.core.model.ColorFill
-import com.lucerna.core.model.Settings
+import com.lucerna.core.model.LibraryData
 import com.lucerna.core.model.TrayIconStyle
 import com.lucerna.core.model.WallpaperItem
 import com.lucerna.core.model.WallpaperSource
@@ -73,9 +73,6 @@ class LucernaState(
         collapsedSections = if (key in collapsedSections) collapsedSections - key else collapsedSections + key
     }
 
-    val currentItem: WallpaperItem?
-        get() = settings.currentWallpaperId?.let { id -> items.firstOrNull { it.id == id } }
-
     val usingColor: Boolean
         get() = settings.currentSource == WallpaperSource.COLOR
 
@@ -119,14 +116,6 @@ class LucernaState(
             persistSettings()
         }
         toast = "已从图库移除 ${item.name}"
-    }
-
-    fun removeCurrentColor() {
-        settings = settings.copy(
-            currentSource = WallpaperSource.LIBRARY,
-            currentWallpaperId = currentItem?.id,
-        )
-        persistSettings()
     }
 
     fun openPreview(item: WallpaperItem) {
@@ -218,14 +207,17 @@ class LucernaState(
                 busyMessage = "正在导入 ${file.name}…"
             }
         }
-        library = libraryStore.load()
+        // 导入器已经把合并后的结果写盘；这里直接在内存里按同样的规则合并，省掉一次读盘与解析
+        if (added.isNotEmpty()) {
+            library = LibraryData(
+                (added + library.items)
+                    .distinctBy { it.id }
+                    .sortedByDescending { it.addedAt },
+            )
+        }
         busyMessage = null
         toast = if (added.isEmpty()) "没有可导入的图片或视频" else "已导入 ${added.size} 个壁纸"
         if (added.isNotEmpty()) tab = PanelTab.MINE
-    }
-
-    fun showToast(message: String) {
-        toast = message
     }
 
     fun consumeToast() {

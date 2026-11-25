@@ -4,20 +4,12 @@ import com.lucerna.core.model.ColorFill
 import com.lucerna.core.model.ColorKind
 import com.lucerna.core.model.Rgb
 import com.lucerna.core.model.gradientEndpoints
-import java.awt.Color
-import java.awt.Graphics2D
-import java.awt.LinearGradientPaint
-import java.awt.MultipleGradientPaint
-import java.awt.RenderingHints
+import java.awt.*
 import java.awt.geom.Path2D
 import java.awt.image.BufferedImage
 import java.io.File
 import javax.imageio.ImageIO
-import kotlin.math.abs
-import kotlin.math.cos
-import kotlin.math.hypot
-import kotlin.math.roundToInt
-import kotlin.math.sin
+import kotlin.math.*
 
 /**
  * 把 [ColorFill] 画成位图。
@@ -63,14 +55,14 @@ object ColorRenderer {
     }
 
     private fun paintGradient(g: Graphics2D, fill: ColorFill, width: Int, height: Int) {
-        if (fill.colors.size < 2) {
+        val count = fill.colors.size
+        if (count < 2) {
             paintSolid(g, fill.colorAt(0), width, height)
             return
         }
         val (start, end) = gradientEndpoints(fill.angle, width.toFloat() / height)
-        val count = fill.colors.size
         val fractions = FloatArray(count) { index -> index.toFloat() / (count - 1) }
-        val colors = fill.colors.map { it.toAwt() }.toTypedArray()
+        val colors = Array(count) { index -> fill.colors[index].toAwt() }
         val paint = LinearGradientPaint(
             start.x * width,
             start.y * height,
@@ -97,27 +89,27 @@ object ColorRenderer {
         val ux = cos(radians)
         val uy = sin(radians)
         val vx = -uy
-        val vy = ux
         val length = abs(width * ux) + abs(height * uy)
         val cx = width / 2.0
         val cy = height / 2.0
         val reach = hypot(width.toDouble(), height.toDouble()) * 2.0
+        // 复用同一个路径对象，逐段改点即可，避免每段都新建 Path2D
+        val path = Path2D.Double()
 
-        bands.forEachIndexed { index, color ->
+        for (index in bands.indices) {
             val t0 = index.toDouble() / count - 0.5
             val t1 = (index + 1).toDouble() / count - 0.5
             val p0x = cx + ux * length * t0
             val p0y = cy + uy * length * t0
             val p1x = cx + ux * length * t1
             val p1y = cy + uy * length * t1
-            val path = Path2D.Double().apply {
-                moveTo(p0x + vx * reach, p0y + vy * reach)
-                lineTo(p1x + vx * reach, p1y + vy * reach)
-                lineTo(p1x - vx * reach, p1y - vy * reach)
-                lineTo(p0x - vx * reach, p0y - vy * reach)
-                closePath()
-            }
-            g.color = color.toAwt()
+            path.reset()
+            path.moveTo(p0x + vx * reach, p0y + ux * reach)
+            path.lineTo(p1x + vx * reach, p1y + ux * reach)
+            path.lineTo(p1x - vx * reach, p1y - ux * reach)
+            path.lineTo(p0x - vx * reach, p0y - ux * reach)
+            path.closePath()
+            g.color = bands[index].toAwt()
             g.fill(path)
         }
     }
@@ -126,11 +118,8 @@ object ColorRenderer {
 }
 
 /** Rgb 转 AWT 颜色，顺手做夹取。 */
-fun Rgb.toAwt(): Color {
-    val safe = normalized()
-    return Color(
-        (safe.r * 255f).toInt().coerceIn(0, 255),
-        (safe.g * 255f).toInt().coerceIn(0, 255),
-        (safe.b * 255f).toInt().coerceIn(0, 255),
-    )
-}
+fun Rgb.toAwt(): Color = Color(
+    (r.coerceIn(0f, 1f) * 255f).toInt().coerceIn(0, 255),
+    (g.coerceIn(0f, 1f) * 255f).toInt().coerceIn(0, 255),
+    (b.coerceIn(0f, 1f) * 255f).toInt().coerceIn(0, 255),
+)

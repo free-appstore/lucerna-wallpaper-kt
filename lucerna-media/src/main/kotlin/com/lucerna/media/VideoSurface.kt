@@ -34,7 +34,6 @@ import java.nio.file.Path
  * @param volume 0..1 的相对音量
  * @param muted 是否静音，与 [volume] 独立，切回有声时能恢复原音量
  * @param loop 播放结束后是否从头循环
- * @param crop true 时按「铺满并裁切」显示，适合壁纸；false 时完整显示画面，适合预览
  */
 @Composable
 fun VideoSurface(
@@ -43,7 +42,6 @@ fun VideoSurface(
     volume: Float = 1f,
     muted: Boolean = true,
     loop: Boolean = true,
-    crop: Boolean = false,
 ) {
     val creation = remember(path) {
         runCatching { MediampPlayerFactoryLoader.first().create(Any(), Dispatchers.Main) }
@@ -68,9 +66,10 @@ fun VideoSurface(
         applyAudio(player, muted, volume)
     }
 
-    LaunchedEffect(player, crop) {
+    // 预览按原始比例完整显示
+    LaunchedEffect(player) {
         val aspect = runCatching { player.features.get(VideoAspectRatio.Key) }.getOrNull()
-        aspect?.setMode(if (crop) AspectRatioMode.CROP else AspectRatioMode.FIT)
+        runCatching { aspect?.setMode(AspectRatioMode.FIT) }
     }
 
     LaunchedEffect(player) {
@@ -105,7 +104,7 @@ private suspend fun MediampPlayer.openFile(path: Path) {
 }
 
 /** MediaMP 的音量范围由后端决定（mpv 为 0..100），这里把 0..1 映射过去。 */
-fun applyAudio(player: MediampPlayer, muted: Boolean, volume: Float) {
+private fun applyAudio(player: MediampPlayer, muted: Boolean, volume: Float) {
     val audio = runCatching { player.features.get(AudioLevelController.Key) }.getOrNull() ?: return
     val safeVolume = volume.coerceIn(0f, 1f)
     audio.setMute(muted)

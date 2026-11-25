@@ -1,5 +1,7 @@
 package com.lucerna.core
 
+import com.lucerna.core.files.FileBrowser
+import com.lucerna.core.files.ImportFilter
 import com.lucerna.core.media.Importer
 import com.lucerna.core.model.ColorKind
 import com.lucerna.core.model.Settings
@@ -81,11 +83,38 @@ class StoreAndImportTest {
         val item = added.first()
         assertTrue(item.exists)
         assertTrue(item.path.startsWith(paths.mediaDir.toFile().absolutePath))
-        assertNotNull(item.thumbnail)
-        assertTrue(java.io.File(item.thumbnail!!).isFile)
         assertEquals(1200, item.width)
         assertEquals(800, item.height)
+        // 缩略图按 640×400 的上限等比缩小
+        val thumbnail = File(assertNotNull(item.thumbnail))
+        assertTrue(thumbnail.isFile)
+        val thumb = ImageIO.read(thumbnail)
+        assertEquals(600, thumb.width)
+        assertEquals(400, thumb.height)
         assertEquals(1, library.load().items.size)
+    }
+
+    @Test
+    fun `文件浏览器先文件夹后文件并遵守上限`() {
+        val dir = File(tempPaths().root.toFile(), "browse").apply { mkdirs() }
+        File(dir, "zeta.png").writeBytes(byteArrayOf(1))
+        File(dir, "Alpha.PNG").writeBytes(byteArrayOf(1))
+        File(dir, "clip.mp4").writeBytes(byteArrayOf(1))
+        File(dir, "notes.txt").writeText("x")
+        File(dir, ".hidden.png").writeBytes(byteArrayOf(1))
+        File(dir, "sub").mkdirs()
+
+        val entries = FileBrowser.list(dir, ImportFilter.ALL)
+        assertEquals("sub", entries.first().name, "文件夹排在最前")
+        assertEquals(
+            listOf("Alpha.PNG", "clip.mp4", "zeta.png"),
+            entries.drop(1).map { it.name },
+            "文件按名称排序，隐藏文件与不支持的格式被过滤",
+        )
+
+        assertTrue(FileBrowser.list(dir, ImportFilter.IMAGE).none { it.type == WallpaperType.VIDEO })
+        assertEquals(2, FileBrowser.list(dir, ImportFilter.ALL, limit = 2).size)
+        assertTrue(FileBrowser.list(dir, ImportFilter.ALL, limit = 2).first().isDirectory)
     }
 
     @Test

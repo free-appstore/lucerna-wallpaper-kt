@@ -16,7 +16,8 @@ class AppEnvironment {
     val settingsStore = SettingsStore(paths)
     val libraryStore = LibraryStore(paths)
     val backend: WallpaperBackend = PlatformWallpapers.create()
-    val importer = Importer(paths, libraryStore)
+    /** 桌面端导入后预先生成视频封面：之后「设为壁纸」不用再等抽帧。 */
+    val importer = Importer(paths, libraryStore, prewarmVideoPosters = true)
 
     var tray: TrayController? = null
     var quitAction: (() -> Unit)? = null

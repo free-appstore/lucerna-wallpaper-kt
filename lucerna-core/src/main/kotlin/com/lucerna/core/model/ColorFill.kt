@@ -135,6 +135,10 @@ data class ColorFill(
 
     /** 把旧数据或连续操作后的状态收拢到合法范围。 */
     fun normalized(): ColorFill {
+        val safeAngle = if (angle.isFinite()) angle.roundToInt().mod(360) else 90
+        val safeSteps = steps.coerceIn(MIN_STEPS, MAX_STEPS)
+        // 已经合法时直接返回自己：拖动滑杆时每次取色都要归一化，省掉一次颜色列表拷贝
+        if (safeAngle.toFloat() == angle && safeSteps == steps && colorsAreValid()) return this
         val safeColors = colors
             .map { it.normalized() }
             .take(MAX_COLORS)
@@ -144,12 +148,17 @@ data class ColorFill(
             // 渐变至少两个颜色；只有一个时复制一份，效果仍是纯色但不越界
             while (safeColors.size < 2) safeColors += safeColors.last()
         }
-        val safeAngle = if (angle.isFinite()) angle.roundToInt().mod(360) else 90
         return copy(
             colors = safeColors,
             angle = safeAngle.toFloat(),
-            steps = steps.coerceIn(MIN_STEPS, MAX_STEPS),
+            steps = safeSteps,
         )
+    }
+
+    private fun colorsAreValid(): Boolean {
+        if (colors.isEmpty() || colors.size > MAX_COLORS) return false
+        if (kind != ColorKind.SOLID && colors.size < 2) return false
+        return colors.all { it.r in 0f..1f && it.g in 0f..1f && it.b in 0f..1f }
     }
 
     /** 在渐变轴上按位置 t 取色，多个颜色之间线性插值。 */
@@ -173,9 +182,6 @@ data class ColorFill(
         const val MAX_COLORS = 10
         const val MIN_STEPS = 2
         const val MAX_STEPS = 20
-
-        /** 方向预设：→ ↓ ↘ ↗ */
-        val ANGLE_PRESETS = listOf(0f, 90f, 45f, 135f)
 
         val DEFAULT_COLORS = listOf(
             Rgb(1.0f, 0.77f, 0.42f),

@@ -4,7 +4,6 @@ import com.lucerna.core.model.LibraryData
 import com.lucerna.core.model.Settings
 import com.lucerna.core.model.WallpaperItem
 import com.lucerna.core.paths.AppPaths
-import kotlinx.serialization.decodeFromString
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption

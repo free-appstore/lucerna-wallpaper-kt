@@ -66,6 +66,8 @@ fun ImportPage(state: LucernaState) {
     var entries by remember { mutableStateOf<List<BrowserEntry>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var selection by remember { mutableStateOf<Set<String>>(emptySet()) }
+    // 常用位置在进程内不会变，避免每次重组都去 stat 一遍文件系统
+    val roots = remember { FileBrowser.roots() }
 
     LaunchedEffect(dir, filter) {
         loading = true
@@ -85,7 +87,7 @@ fun ImportPage(state: LucernaState) {
             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            FileBrowser.roots().forEach { (label, file) ->
+            roots.forEach { (label, file) ->
                 PillButton(
                     text = label,
                     selected = dir.absolutePath == file.absolutePath,

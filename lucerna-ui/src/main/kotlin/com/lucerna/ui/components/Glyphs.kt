@@ -259,17 +259,6 @@ fun MinusGlyph(modifier: Modifier = Modifier, color: Color = LucernaColors.TextS
     }
 }
 
-/** 定位图标。 */
-@Composable
-fun PinGlyph(modifier: Modifier = Modifier, color: Color = LucernaColors.TextSecondary) {
-    Canvas(modifier.size(15.dp)) {
-        val w = size.width
-        drawCircle(color, radius = w * 0.3f, center = Offset(w * 0.5f, w * 0.4f), style = Stroke(width = w * 0.1f))
-        drawCircle(color, radius = w * 0.09f, center = Offset(w * 0.5f, w * 0.4f))
-        drawLine(color, Offset(w * 0.5f, w * 0.7f), Offset(w * 0.5f, w * 0.9f), strokeWidth = w * 0.1f, cap = StrokeCap.Round)
-    }
-}
-
 /** 勾选。 */
 @Composable
 fun CheckGlyph(modifier: Modifier = Modifier, color: Color = Color(0xFF1A1408)) {
@@ -281,25 +270,5 @@ fun CheckGlyph(modifier: Modifier = Modifier, color: Color = Color(0xFF1A1408)) 
             lineTo(w * 0.9f, w * 0.2f)
         }
         drawPath(path, color, style = Stroke(width = w * 0.16f, cap = StrokeCap.Round))
-    }
-}
-
-/** 齿轮图标，用于设置页标题。 */
-@Composable
-fun GearGlyph(modifier: Modifier = Modifier, color: Color = LucernaColors.Accent) {
-    Canvas(modifier.size(15.dp)) {
-        val w = size.width
-        drawCircle(color, radius = w * 0.16f, center = Offset(w * 0.5f, w * 0.5f), style = Stroke(width = w * 0.12f))
-        repeat(8) { index ->
-            rotate(index * 45f, Offset(w * 0.5f, w * 0.5f)) {
-                drawLine(
-                    color,
-                    Offset(w * 0.5f, w * 0.06f),
-                    Offset(w * 0.5f, w * 0.2f),
-                    strokeWidth = w * 0.12f,
-                    cap = StrokeCap.Round,
-                )
-            }
-        }
     }
 }

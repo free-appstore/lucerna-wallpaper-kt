@@ -60,17 +60,17 @@ internal object MacWallpaperStore {
         if (DesktopOs.current != DesktopOs.MACOS) return false
         val store = storeFile
         if (!store.isFile) return false
-        val target = runCatching { File(imagePath).canonicalPath }.getOrElse { imagePath }
+        val target = canonicalPath(imagePath)
 
         return runCatching {
-            // 快路径：所有桌面已经是这张图，不必重启壁纸服务（也就没有灰屏）
-            val (matchedAlready, totalAlready) = status(store, target)
+            // 整份 plist 只解析一次；快路径（所有桌面已经是这张图）不必重启壁纸服务，也就没有灰屏
+            var root = PropertyListParser.parse(store) as? NSDictionary ?: return false
+            val (matchedAlready, totalAlready) = status(root, target)
             if (totalAlready == 0) return false
             if (matchedAlready == totalAlready) return true
 
             var backupTaken = false
             repeat(MAX_SYNC_ATTEMPTS) { attempt ->
-                val root = PropertyListParser.parse(store) as? NSDictionary ?: return false
                 val report = applyToRoot(root, target)
                 if (report.total == 0) return false
                 if (!backupTaken) {
@@ -82,13 +82,14 @@ internal object MacWallpaperStore {
                 writeAtomically(BinaryPropertyListWriter.writeToArray(root))
                 restartWallpaperAgent()
 
-                val (matched, total) = status(store, target)
+                val (matched, total) = readStatus(store, target)
                 if (matched == total) {
                     println("[Lucerna] all desktops updated ($matched/$total entries, attempt ${attempt + 1})")
                     return true
                 }
                 // 服务退出时把内存里的旧配置写回来了，重来一次
                 println("[Lucerna] desktops not all updated ($matched/$total), retrying")
+                root = PropertyListParser.parse(store) as? NSDictionary ?: return false
             }
             println("[Lucerna] wallpaper store sync failed after $MAX_SYNC_ATTEMPTS attempts")
             false
@@ -165,16 +166,23 @@ internal object MacWallpaperStore {
     }
 
     /** 壁纸库里已经有几个桌面配置（含已不存在的 Space，历史条目也一起改，避免残留旧图）。 */
-    private fun status(store: File, target: String): Pair<Int, Int> {
-        val root = runCatching { PropertyListParser.parse(store) as? NSDictionary }.getOrNull()
-            ?: return 0 to 0
+    private fun status(root: NSDictionary, target: String): Pair<Int, Int> {
         val entries = desktopEntries(root)
         val matched = entries.count { entry ->
             val path = entry.imagePath() ?: return@count false
-            runCatching { File(path).canonicalPath == target }.getOrElse { path == target }
+            canonicalPath(path) == target
         }
         return matched to entries.size
     }
+
+    /** 从磁盘重新读壁纸库并统计匹配数（重启壁纸服务后配置可能被改写）。 */
+    private fun readStatus(store: File, target: String): Pair<Int, Int> {
+        val root = runCatching { PropertyListParser.parse(store) as? NSDictionary }.getOrNull()
+            ?: return 0 to 0
+        return status(root, target)
+    }
+
+    private fun canonicalPath(path: String): String = runCatching { File(path).canonicalPath }.getOrElse { path }
 
     /**
      * 收集壁纸库里所有桌面配置：SystemDefault、AllSpacesAndDisplays、

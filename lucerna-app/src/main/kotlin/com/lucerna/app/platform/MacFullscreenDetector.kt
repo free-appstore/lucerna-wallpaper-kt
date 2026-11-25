@@ -38,6 +38,12 @@ internal object MacFullscreenDetector {
     /** 只认普通/浮动层级（全屏 app 是 0 层）；菜单栏 24、Dock 20 等更高的层级不算。 */
     private const val MAX_WINDOW_LAYER = 3
 
+    /** kCGMainMenuWindowLevel：菜单栏窗口所在的层级。 */
+    private const val MENU_BAR_LAYER = 24
+
+    /** 菜单栏再高也不会超过这个高度（点），用来排除同层级的其它窗口。 */
+    private const val MAX_MENU_BAR_HEIGHT = 160
+
     /** 系统 UI 的可执行文件都装在这些目录下。 */
     private val SYSTEM_PATHS = listOf("/System/", "/usr/libexec/", "/usr/sbin/", "/sbin/")
 
@@ -63,8 +69,12 @@ internal object MacFullscreenDetector {
      */
     fun fullscreenScreens(): List<Rectangle> {
         if (DesktopOs.current != DesktopOs.MACOS) return emptyList()
-        val screens = runCatching { screenBounds() }.getOrElse { emptyList() }
-        if (screens.isEmpty()) return emptyList()
+        return fullscreenScreens(runCatching { screenBounds() }.getOrElse { emptyList() })
+    }
+
+    /** 同上，但屏幕边界由调用方提供，省掉一次屏幕枚举。 */
+    fun fullscreenScreens(screens: List<Rectangle>): List<Rectangle> {
+        if (DesktopOs.current != DesktopOs.MACOS || screens.isEmpty()) return emptyList()
         val windows = runCatching { coveringWindows() }.getOrElse { emptyList() }
         if (windows.isEmpty()) return emptyList()
         return screens.filter { screen -> windows.any { covers(it, screen) } }
@@ -74,6 +84,33 @@ internal object MacFullscreenDetector {
     fun screenBounds(): List<Rectangle> = GraphicsEnvironment.getLocalGraphicsEnvironment()
         .screenDevices
         .map { it.defaultConfiguration.bounds }
+
+    /**
+     * 每块屏幕上菜单栏的高度（点）；没有菜单栏的屏幕不返回。
+     *
+     * 菜单栏窗口由系统绘制（`kCGMainMenuWindowLevel`），顶部贴齐屏幕。换壁纸后 macOS
+     * 只在这条壁纸露出来时才给菜单栏背景重新采样，壁纸层需要知道让开多高。
+     * 菜单栏自动隐藏、或副屏没有菜单栏时（未开「显示器各自拥有独立空间」）返回空。
+     */
+    fun menuBarInsets(screens: List<Rectangle> = screenBounds()): Map<Rectangle, Int> {
+        if (DesktopOs.current != DesktopOs.MACOS || screens.isEmpty()) return emptyMap()
+        val bars = runCatching {
+            windowList(listOptions = 1).mapNotNull { window ->
+                val layer = (window.objectForKey("kCGWindowLayer") as? NSNumber)?.intValue()
+                    ?: return@mapNotNull null
+                if (layer != MENU_BAR_LAYER) return@mapNotNull null
+                (window.objectForKey("kCGWindowBounds") as? NSDictionary)?.toRectangle()
+            }
+        }.getOrElse { emptyList() }
+        if (bars.isEmpty()) return emptyMap()
+
+        val insets = LinkedHashMap<Rectangle, Int>()
+        screens.forEach { screen ->
+            val height = bars.filter { coversMenuBar(it, screen) }.maxOfOrNull { it.height } ?: return@forEach
+            if (height > 0) insets[screen] = height
+        }
+        return insets
+    }
 
     /** 鼠标所在屏幕是否被全屏 app 覆盖（`--detect-fullscreen` 诊断用）。 */
     fun isPointerScreenFullscreen(): Boolean {
@@ -165,4 +202,12 @@ internal object MacFullscreenDetector {
             window.y <= screen.y + TOLERANCE &&
             window.x + window.width >= screen.x + screen.width - TOLERANCE &&
             window.y + window.height >= screen.y + screen.height - TOLERANCE
+
+    /** 窗口是不是贴在这块屏幕顶部的菜单栏（带刘海时系统可能拆成几段）。 */
+    private fun coversMenuBar(bar: Rectangle, screen: Rectangle): Boolean =
+        bar.height in 1..MAX_MENU_BAR_HEIGHT &&
+            bar.y >= screen.y - TOLERANCE &&
+            bar.y <= screen.y + TOLERANCE &&
+            bar.x < screen.x + screen.width &&
+            bar.x + bar.width > screen.x
 }

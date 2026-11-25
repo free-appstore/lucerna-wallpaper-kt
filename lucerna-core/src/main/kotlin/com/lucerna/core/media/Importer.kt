@@ -10,7 +10,9 @@ import java.io.File
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.util.UUID
+import java.util.concurrent.Executors
 import javax.imageio.ImageIO
+import javax.imageio.ImageReader
 import javax.imageio.stream.ImageInputStream
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -20,11 +22,21 @@ import kotlin.math.roundToInt
  *
  * 复制而不是记录原始路径，避免用户移动原文件后壁纸失效；
  * 导入过程可被调用方放到后台线程，`onProgress` 用于回报当前文件名。
+ *
+ * [prewarmVideoPosters] 打开时，导入完成的视频会在后台先抽好封面（见 [VideoPoster]），
+ * 这样之后点「设为壁纸」不必再等 qlmanage / ffmpeg。
  */
 class Importer(
     private val paths: AppPaths,
     private val library: LibraryStore,
+    private val prewarmVideoPosters: Boolean = false,
 ) {
+
+    private val posterExecutor by lazy {
+        Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "lucerna-video-poster").apply { isDaemon = true }
+        }
+    }
 
     fun importFiles(files: List<File>, onProgress: (File) -> Unit = {}): List<WallpaperItem> {
         paths.ensure()
@@ -35,8 +47,19 @@ class Importer(
                 .getOrNull()
                 ?.let { added += it }
         }
-        if (added.isNotEmpty()) library.add(added)
+        if (added.isNotEmpty()) {
+            library.add(added)
+            if (prewarmVideoPosters) prewarmPosters(added)
+        }
         return added
+    }
+
+    /** 视频封面在后台抽，不拖慢导入本身。 */
+    private fun prewarmPosters(items: List<WallpaperItem>) {
+        items.forEach { item ->
+            if (item.type != WallpaperType.VIDEO) return@forEach
+            posterExecutor.execute { runCatching { VideoPoster.ensure(paths, item) } }
+        }
     }
 
     private fun importOne(source: File): WallpaperItem? {
@@ -48,8 +71,19 @@ class Importer(
         val target = paths.mediaDir.resolve(copyName).toFile()
         Files.copy(source.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
 
-        val dimensions = if (type == WallpaperType.IMAGE) readDimensions(target) else null
-        val thumbnail = if (type == WallpaperType.IMAGE) makeThumbnail(target, id, dimensions) else null
+        // 图片只解码一次：同一个 reader 里先读尺寸，再按降采样解码出缩略图
+        var dimensions: Pair<Int, Int>? = null
+        var thumbnail: File? = null
+        if (type == WallpaperType.IMAGE) {
+            readWithImageReader(target) { reader ->
+                val width = reader.getWidth(0)
+                val height = reader.getHeight(0)
+                if (width > 0 && height > 0) {
+                    dimensions = width to height
+                    thumbnail = makeThumbnail(reader, id, width, height)
+                }
+            }
+        }
 
         return WallpaperItem(
             id = id,
@@ -63,31 +97,40 @@ class Importer(
         )
     }
 
-    /** 只读图片头拿尺寸，避免为大图分配整块像素。 */
-    private fun readDimensions(file: File): Pair<Int, Int>? {
+    /** 打开图片的 reader 执行 [block]，结束时总会释放 reader 与输入流。 */
+    private inline fun readWithImageReader(file: File, block: (ImageReader) -> Unit) {
         var stream: ImageInputStream? = null
-        return try {
+        var reader: ImageReader? = null
+        try {
             stream = ImageIO.createImageInputStream(file)
-            val reader = ImageIO.getImageReaders(stream).asSequence().firstOrNull() ?: return null
-            reader.input = stream
-            val width = reader.getWidth(0)
-            val height = reader.getHeight(0)
-            reader.dispose()
-            width to height
+            reader = ImageIO.getImageReaders(stream).asSequence().firstOrNull()
+            if (reader != null) {
+                reader.input = stream
+                block(reader)
+            }
         } catch (_: Exception) {
-            null
+            // 读不了这张图就当没有缩略图，导入本身仍然成功
         } finally {
+            runCatching { reader?.dispose() }
             runCatching { stream?.close() }
         }
     }
 
-    private fun makeThumbnail(file: File, id: String, dimensions: Pair<Int, Int>?): File? {
-        val image = runCatching { ImageIO.read(file) }.getOrNull() ?: return null
-        val (width, height) = dimensions ?: (image.width to image.height)
-        if (width <= 0 || height <= 0) return null
+    /**
+     * 生成缩略图。
+     *
+     * 先用 [ImageReader] 的按整数倍抽样解码，再缩放到目标尺寸：
+     * 一亿像素的原图也只解出一小块，不会整张放进内存。
+     */
+    private fun makeThumbnail(reader: ImageReader, id: String, width: Int, height: Int): File? {
         val scale = minOf(1f, THUMB_MAX_WIDTH.toFloat() / width, THUMB_MAX_HEIGHT.toFloat() / height)
         val targetWidth = max(1, (width * scale).roundToInt())
         val targetHeight = max(1, (height * scale).roundToInt())
+        val subsample = if (scale < 1f) max(1, (1f / scale).toInt()) else 1
+        val param = reader.defaultReadParam
+        param.setSourceSubsampling(subsample, subsample, 0, 0)
+        // 少数插件不支持抽样解码，退回整张读取
+        val image = runCatching { reader.read(0, param) }.getOrElse { reader.read(0) }
         val thumb = BufferedImage(targetWidth, targetHeight, BufferedImage.TYPE_INT_RGB)
         val g = thumb.createGraphics()
         try {
@@ -101,7 +144,7 @@ class Importer(
         return runCatching {
             ImageIO.write(thumb, "png", output)
             output
-        }.getOrElse { null }
+        }.getOrNull()
     }
 
     companion object {

@@ -2,41 +2,17 @@
 
 package com.lucerna.ui.pages
 
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.ContextMenuArea
-import androidx.compose.foundation.ContextMenuItem
-import androidx.compose.foundation.ContextMenuState
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -46,7 +22,6 @@ import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -54,18 +29,10 @@ import com.lucerna.core.model.ColorFill
 import com.lucerna.core.model.ColorKind
 import com.lucerna.core.model.Rgb
 import com.lucerna.core.render.ColorRenderer
-import com.lucerna.ui.components.GlassCard
-import com.lucerna.ui.components.MinusGlyph
-import com.lucerna.ui.components.PillButton
-import com.lucerna.ui.components.PlusGlyph
-import com.lucerna.ui.components.PrimaryButton
+import com.lucerna.ui.components.*
 import com.lucerna.ui.state.LucernaState
 import com.lucerna.ui.theme.LucernaColors
-import kotlin.math.PI
-import kotlin.math.atan2
-import kotlin.math.cos
-import kotlin.math.roundToInt
-import kotlin.math.sin
+import kotlin.math.*
 
 /** 「色彩」页：纯色 / 渐变 / 色阶编辑器。 */
 @Composable
@@ -79,136 +46,136 @@ fun ColorPage(state: LucernaState) {
                 .verticalScroll(rememberScrollState())
                 .padding(bottom = 4.dp),
         ) {
-        ColorPreview(fill, onReveal = state::openRenders)
-        Spacer(Modifier.height(12.dp))
-
-        GlassCard(Modifier.fillMaxWidth()) {
-            Text("类型", fontSize = 10.5.sp, color = LucernaColors.TextTertiary)
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                ColorKind.entries.forEach { kind ->
-                    PillButton(
-                        text = kind.label,
-                        selected = fill.kind == kind,
-                        modifier = Modifier.weight(1f),
-                        onClick = {
-                            state.updateColorDraft(fill.copy(kind = kind).normalized())
-                        },
-                    )
-                }
-            }
-        }
-        Spacer(Modifier.height(10.dp))
-
-        GlassCard(Modifier.fillMaxWidth()) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("颜色", fontSize = 10.5.sp, color = LucernaColors.TextTertiary)
-                Spacer(Modifier.weight(1f))
-                Text(fill.summary(), fontSize = 9.5.sp, color = LucernaColors.TextTertiary)
-            }
-            Spacer(Modifier.height(10.dp))
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(7.dp),
-            ) {
-                repeat(fill.wellCount) { index ->
-                    ColorWell(
-                        color = fill.colorAt(index),
-                        selected = state.selectedColorIndex == index,
-                        onClick = { state.selectedColorIndex = index },
-                    )
-                }
-                if (fill.kind != ColorKind.SOLID) {
-                    SmallRoundButton(enabled = fill.canAddColor(), positive = true) {
-                        state.updateColorDraft(fill.addingColor())
-                        state.selectedColorIndex = fill.colors.size
-                    }
-                    SmallRoundButton(enabled = fill.canRemoveColor(), positive = false) {
-                        val removed = fill.removingColor(state.selectedColorIndex)
-                        state.updateColorDraft(removed)
-                        state.selectedColorIndex = state.selectedColorIndex.coerceAtMost(removed.wellCount - 1)
-                    }
-                }
-            }
+            ColorPreview(fill, onReveal = state::openRenders)
             Spacer(Modifier.height(12.dp))
-            val index = state.selectedColorIndex.coerceIn(0, fill.wellCount - 1)
-            val current = fill.colorAt(index)
-            ColorComponentSlider("R", current.r, Color(0xFFFF6B6B)) { value ->
-                state.updateColorDraft(fill.withColor(index, current.copy(r = value)))
-            }
-            ColorComponentSlider("G", current.g, Color(0xFF7EDB95)) { value ->
-                state.updateColorDraft(fill.withColor(index, current.copy(g = value)))
-            }
-            ColorComponentSlider("B", current.b, Color(0xFF6BA8FF)) { value ->
-                state.updateColorDraft(fill.withColor(index, current.copy(b = value)))
-            }
-            Spacer(Modifier.height(4.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("色值", fontSize = 10.sp, color = LucernaColors.TextTertiary, modifier = Modifier.width(34.dp))
-                HexField(
-                    value = current.toHex(),
-                    onColor = { rgb -> state.updateColorDraft(fill.withColor(index, rgb)) },
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
-        Spacer(Modifier.height(10.dp))
 
-        if (fill.kind.usesAngle) {
             GlassCard(Modifier.fillMaxWidth()) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("方向", fontSize = 10.5.sp, color = LucernaColors.TextTertiary)
-                    Spacer(Modifier.weight(1f))
-                    Text("${fill.angle.roundToInt().mod(360)}°", fontSize = 10.sp, color = LucernaColors.Accent)
-                }
+                Text("类型", fontSize = 10.5.sp, color = LucernaColors.TextTertiary)
                 Spacer(Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    AngleDial(angle = fill.angle) { angle ->
-                        state.updateColorDraft(fill.copy(angle = angle.toFloat()))
-                    }
-                    Spacer(Modifier.width(16.dp))
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            AnglePreset("→", 0f, fill, state)
-                            AnglePreset("↓", 90f, fill, state)
-                            AnglePreset("↘", 45f, fill, state)
-                            AnglePreset("↗", 315f, fill, state)
-                        }
-                        Text(
-                            "拖动圆盘可切换到任意角度",
-                            fontSize = 9.5.sp,
-                            color = LucernaColors.TextTertiary,
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    ColorKind.entries.forEach { kind ->
+                        PillButton(
+                            text = kind.label,
+                            selected = fill.kind == kind,
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                state.updateColorDraft(fill.copy(kind = kind).normalized())
+                            },
                         )
                     }
                 }
             }
             Spacer(Modifier.height(10.dp))
-        }
 
-        if (fill.kind == ColorKind.STEPS) {
             GlassCard(Modifier.fillMaxWidth()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("阶梯数量", fontSize = 10.5.sp, color = LucernaColors.TextTertiary)
+                    Text("颜色", fontSize = 10.5.sp, color = LucernaColors.TextTertiary)
                     Spacer(Modifier.weight(1f))
-                    Text("${fill.steps} 阶", fontSize = 10.sp, color = LucernaColors.Accent)
+                    Text(fill.summary(), fontSize = 9.5.sp, color = LucernaColors.TextTertiary)
                 }
-                Slider(
-                    value = fill.steps.toFloat(),
-                    onValueChange = { value ->
-                        state.updateColorDraft(fill.copy(steps = value.roundToInt()))
-                    },
-                    valueRange = ColorFill.MIN_STEPS.toFloat()..ColorFill.MAX_STEPS.toFloat(),
-                    colors = SliderDefaults.colors(
-                        thumbColor = LucernaColors.Accent,
-                        activeTrackColor = LucernaColors.Accent,
-                        inactiveTrackColor = LucernaColors.Track,
-                    ),
-                    modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
-                )
+                Spacer(Modifier.height(10.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                ) {
+                    repeat(fill.wellCount) { index ->
+                        ColorWell(
+                            color = fill.colorAt(index),
+                            selected = state.selectedColorIndex == index,
+                            onClick = { state.selectedColorIndex = index },
+                        )
+                    }
+                    if (fill.kind != ColorKind.SOLID) {
+                        SmallRoundButton(enabled = fill.canAddColor(), positive = true) {
+                            state.updateColorDraft(fill.addingColor())
+                            state.selectedColorIndex = fill.colors.size
+                        }
+                        SmallRoundButton(enabled = fill.canRemoveColor(), positive = false) {
+                            val removed = fill.removingColor(state.selectedColorIndex)
+                            state.updateColorDraft(removed)
+                            state.selectedColorIndex = state.selectedColorIndex.coerceAtMost(removed.wellCount - 1)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                val index = state.selectedColorIndex.coerceIn(0, fill.wellCount - 1)
+                val current = fill.colorAt(index)
+                ColorComponentSlider("R", current.r, Color(0xFFFF6B6B)) { value ->
+                    state.updateColorDraft(fill.withColor(index, current.copy(r = value)))
+                }
+                ColorComponentSlider("G", current.g, Color(0xFF7EDB95)) { value ->
+                    state.updateColorDraft(fill.withColor(index, current.copy(g = value)))
+                }
+                ColorComponentSlider("B", current.b, Color(0xFF6BA8FF)) { value ->
+                    state.updateColorDraft(fill.withColor(index, current.copy(b = value)))
+                }
+                Spacer(Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("色值", fontSize = 10.sp, color = LucernaColors.TextTertiary, modifier = Modifier.width(34.dp))
+                    HexField(
+                        value = current.toHex(),
+                        onColor = { rgb -> state.updateColorDraft(fill.withColor(index, rgb)) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
             Spacer(Modifier.height(10.dp))
-        }
-        Spacer(Modifier.height(8.dp))
+
+            if (fill.kind.usesAngle) {
+                GlassCard(Modifier.fillMaxWidth()) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("方向", fontSize = 10.5.sp, color = LucernaColors.TextTertiary)
+                        Spacer(Modifier.weight(1f))
+                        Text("${fill.angle.roundToInt().mod(360)}°", fontSize = 10.sp, color = LucernaColors.Accent)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        AngleDial(angle = fill.angle) { angle ->
+                            state.updateColorDraft(fill.copy(angle = angle.toFloat()))
+                        }
+                        Spacer(Modifier.width(16.dp))
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                AnglePreset("→", 0f, fill, state)
+                                AnglePreset("↓", 90f, fill, state)
+                                AnglePreset("↘", 45f, fill, state)
+                                AnglePreset("↗", 315f, fill, state)
+                            }
+                            Text(
+                                "拖动圆盘可切换到任意角度",
+                                fontSize = 9.5.sp,
+                                color = LucernaColors.TextTertiary,
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+            }
+
+            if (fill.kind == ColorKind.STEPS) {
+                GlassCard(Modifier.fillMaxWidth()) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("阶梯数量", fontSize = 10.5.sp, color = LucernaColors.TextTertiary)
+                        Spacer(Modifier.weight(1f))
+                        Text("${fill.steps} 阶", fontSize = 10.sp, color = LucernaColors.Accent)
+                    }
+                    Slider(
+                        value = fill.steps.toFloat(),
+                        onValueChange = { value ->
+                            state.updateColorDraft(fill.copy(steps = value.roundToInt()))
+                        },
+                        valueRange = ColorFill.MIN_STEPS.toFloat()..ColorFill.MAX_STEPS.toFloat(),
+                        colors = SliderDefaults.colors(
+                            thumbColor = LucernaColors.Accent,
+                            activeTrackColor = LucernaColors.Accent,
+                            inactiveTrackColor = LucernaColors.Track,
+                        ),
+                        modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+            }
+            Spacer(Modifier.height(8.dp))
         }
 
         PrimaryButton(

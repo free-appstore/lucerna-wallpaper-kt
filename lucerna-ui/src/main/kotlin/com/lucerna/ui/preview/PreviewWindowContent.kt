@@ -162,34 +162,29 @@ fun WindowScope.PreviewWindowContent(
                 },
             contentAlignment = Alignment.Center,
         ) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center,
-            ) {
-                ScaledViewport(zoom = zoom, pan = pan, modifier = Modifier.fillMaxSize()) {
-                    if (!item.exists) {
-                        Text(
-                            "文件已被移动或删除",
-                            fontSize = 12.sp,
-                            color = LucernaColors.Danger,
-                            modifier = Modifier.fillMaxSize().wrapContentSize(),
-                        )
-                    } else if (item.type == WallpaperType.VIDEO) {
-                        VideoSurface(
-                            path = item.path,
-                            modifier = Modifier.fillMaxSize(),
-                            volume = volume,
-                            muted = muted,
-                            loop = true,
-                        )
-                    } else {
-                        AsyncImage(
-                            model = File(item.path).toURI().toString(),
-                            contentDescription = item.name,
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    }
+            ScaledViewport(zoom = zoom, pan = pan, modifier = Modifier.fillMaxSize()) {
+                if (!item.exists) {
+                    Text(
+                        "文件已被移动或删除",
+                        fontSize = 12.sp,
+                        color = LucernaColors.Danger,
+                        modifier = Modifier.fillMaxSize().wrapContentSize(),
+                    )
+                } else if (item.type == WallpaperType.VIDEO) {
+                    VideoSurface(
+                        path = item.path,
+                        modifier = Modifier.fillMaxSize(),
+                        volume = volume,
+                        muted = muted,
+                        loop = true,
+                    )
+                } else {
+                    AsyncImage(
+                        model = File(item.path).toURI().toString(),
+                        contentDescription = item.name,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxSize(),
+                    )
                 }
             }
         }

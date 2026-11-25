@@ -1,6 +1,5 @@
 package com.lucerna.ui.components
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -9,12 +8,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -129,28 +125,6 @@ fun GhostButton(
     }
 }
 
-/** 圆形图标按钮。 */
-@Composable
-fun CircleIconButton(
-    modifier: Modifier = Modifier,
-    background: Color = Color(0x12FFFFFF),
-    border: Color = Color.Transparent,
-    onClick: () -> Unit,
-    content: @Composable () -> Unit,
-) {
-    Box(
-        modifier = modifier
-            .size(28.dp)
-            .clip(CircleShape)
-            .background(background)
-            .border(BorderStroke(1.dp, border), CircleShape)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        content()
-    }
-}
-
 /** 设置页的一行：左侧标题与说明，右侧开关。 */
 @Composable
 fun ToggleRow(
@@ -183,15 +157,6 @@ fun ToggleRow(
                 checkedBorderColor = Color.Transparent,
             ),
         )
-    }
-}
-
-/** 两栏小统计块。 */
-@Composable
-fun RowScope.StatCell(label: String, value: String) {
-    Column(modifier = Modifier.weight(1f)) {
-        Text(label, fontSize = 9.5.sp, color = LucernaColors.TextTertiary)
-        Text(value, fontSize = 11.5.sp, color = LucernaColors.TextPrimary, modifier = Modifier.padding(top = 3.dp))
     }
 }
 

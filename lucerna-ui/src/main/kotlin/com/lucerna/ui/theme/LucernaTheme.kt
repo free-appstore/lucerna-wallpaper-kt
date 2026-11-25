@@ -26,7 +26,6 @@ object LucernaColors {
     val TextSecondary = Color(0xA6FFFFFF)
     val TextTertiary = Color(0x66FFFFFF)
     val Danger = Color(0xFFFF7A7A)
-    val Good = Color(0xFF8FE3B0)
     val Track = Color(0x26FFFFFF)
 
     val panelBrush = Brush.verticalGradient(listOf(PanelTop, PanelBottom))
@@ -36,9 +35,6 @@ object LucernaColors {
 object LucernaText {
     val title = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = LucernaColors.TextPrimary)
     val subtitle = TextStyle(fontSize = 10.sp, fontWeight = FontWeight.Normal, color = LucernaColors.TextTertiary)
-    val section = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = LucernaColors.TextSecondary)
-    val body = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Normal, color = LucernaColors.TextPrimary)
-    val caption = TextStyle(fontSize = 10.5.sp, fontWeight = FontWeight.Normal, color = LucernaColors.TextTertiary)
     val button = TextStyle(fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF1A1408))
 }
 
