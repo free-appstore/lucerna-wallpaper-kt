@@ -117,4 +117,14 @@ LUCERNA_SMOKE=1 LUCERNA_SMOKE_TAB=color ./gradlew :lucerna-app:run
 - **Linux**：按桌面环境依次尝试 gsettings、plasma-apply-wallpaperimage、xfconf-query、feh、nitrogen。
 - Windows / Linux 的视频封面会尝试调用 `ffmpeg`，没有安装时保留当前壁纸。
 
+macOS 的 release 包**关掉了 ProGuard 压缩**（`buildTypes.release.proguard.isEnabled = false`）：
+压缩会裁掉 JNA 自带的 native 库（`libjnidispatch`）和反射用到的类，导致
+`com.sun.jna.NativeLibrary` 初始化失败 —— 壁纸窗口就调不成桌面层级，变成普通全屏窗口盖住所有 App
+（这正是「debug 正常、release 把全屏 IDE 盖住」的原因）。
+另外壁纸层有个兜底：任何窗口如果没能调成桌面层级，会立刻隐藏，绝不去遮挡别人的 App。
+
+macOS 打包时会往 `Info.plist` 写入 `LSUIElement=1`（菜单栏附件 App）：这样安装后启动不会出现在 Dock、
+也不会被 LaunchServices 激活 —— 否则启动瞬间系统会切到本 App 所在的桌面 Space，
+正在全屏的 App 看起来就像「被壁纸侵占」了。
+
 打包命令：`./gradlew :lucerna-app:packageDmg`（Windows/Linux 分别在对应系统上执行 `packageMsi` / `packageDeb`）。

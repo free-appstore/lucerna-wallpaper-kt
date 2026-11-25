@@ -66,7 +66,10 @@ class MacWallpaperBackend : WallpaperBackend {
         // 1) 桌面壁纸层：所有屏幕立刻换图（不重启服务、零灰屏），这是用户当下看到的那一层
         val layerOk = layer.apply(path)
         if (!layerOk) {
-            println("[Lucerna] 壁纸层不可用（${layer.error}），本轮只设置系统壁纸")
+            println(
+                "[Lucerna] 壁纸层不可用（${layer.error}），本轮只设置系统壁纸。" +
+                    "如果是 AppKit 线程/反射问题，请确认 JVM 带了 --add-opens java.desktop/*=ALL-UNNAMED",
+            )
         }
 
         // 2) 系统壁纸（当前 Space）：一次 NSWorkspace 调用，不重启服务

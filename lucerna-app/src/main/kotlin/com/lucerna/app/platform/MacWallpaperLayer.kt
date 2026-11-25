@@ -84,7 +84,8 @@ internal class MacWallpaperLayer {
                 it.canvas.setWallpaper(source)
                 it.window.repaint()
             }
-            val unsupported = windows.count { !tune(it) }
+            updateVisibility()
+            val unsupported = windows.count { it.window.isVisible && !tune(it) }
             if (unsupported > 0) failure = "desktop layer unsupported on $unsupported window(s)"
         }
 
@@ -93,16 +94,38 @@ internal class MacWallpaperLayer {
         return failure == null
     }
 
+    /**
+     * 某块屏幕被全屏 app 占着时，把这层窗口藏起来 —— 无论如何都不会盖住全屏 app。
+     *
+     * 全屏 Space 里本来也看不到桌面，而系统壁纸是同一张图，所以藏起来用户完全无感；
+     * 退出全屏后（下一轮巡检，最快 0.8 秒）窗口再显示出来。
+     */
+    private fun updateVisibility() {
+        val covered = runCatching { MacFullscreenDetector.fullscreenScreens() }.getOrElse { emptyList() }
+        windows.forEach { layer ->
+            val shouldShow = covered.none { it == layer.screen }
+            if (layer.window.isVisible != shouldShow) {
+                layer.window.isVisible = shouldShow
+                if (shouldShow) tune(layer)
+            }
+        }
+    }
+
     /** 开始盯屏幕变化（只启动一次）。 */
     private fun startWatching() {
         if (watching) return
         watching = true
         runCatching {
             screenWatcher.scheduleWithFixedDelay(
-                { runCatching { refreshScreens() } },
-                2L,
-                2L,
-                TimeUnit.SECONDS,
+                {
+                    runCatching {
+                        refreshScreens()
+                        runOnEdt { updateVisibility() }
+                    }
+                },
+                800L,
+                800L,
+                TimeUnit.MILLISECONDS,
             )
         }
     }
@@ -160,14 +183,20 @@ internal class MacWallpaperLayer {
             }
             val layer = LayerWindow(screen, window, canvas)
             windows.add(layer)
-            tune(layer)
+            val tunedBeforeShow = tune(layer)
             window.isVisible = true
             // 显示后再设一次：AWT 在显示时会把层级重置成普通窗口
-            tune(layer)
+            val tunedAfterShow = tune(layer)
+            if (!tunedAfterShow) {
+                // 调不成桌面层就是一张普通全屏窗口，会把所有 App（包括全屏的）盖住 ——
+                // 宁可不显示，也不能遮挡别人；调用方会退回系统壁纸
+                println("[Lucerna] wallpaper layer window not tuned (before=$tunedBeforeShow) -> hidden")
+                window.isVisible = false
+            }
         }
     }
 
-    /** 把 NSWindow 调成桌面层；失败返回 false。 */
+    /** 把 NSWindow 调成桌面层；失败返回 false（调用方会把窗口藏起来，绝不遮挡别人）。 */
     private fun tune(layer: LayerWindow): Boolean =
         MacNative.tuneAsDesktopLayer(layer.window) != null
 
