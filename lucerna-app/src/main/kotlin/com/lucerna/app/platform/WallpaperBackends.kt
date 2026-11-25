@@ -10,6 +10,9 @@ import com.sun.jna.platform.win32.Advapi32Util
 import com.sun.jna.platform.win32.WinReg
 import java.awt.GraphicsEnvironment
 import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /** 按平台选择系统壁纸实现。 */
 object PlatformWallpapers {
@@ -22,18 +25,31 @@ object PlatformWallpapers {
 }
 
 /**
- * macOS：不用系统壁纸服务，直接把壁纸画在「桌面层级」的窗口里（见 [MacWallpaperLayer]）。
+ * macOS：壁纸同时铺两处 ——
+ * 1. **桌面壁纸层**（见 [MacWallpaperLayer]）：自己画在桌面层级的窗口里，换壁纸 = 换图，
+ *    所有屏幕立刻生效、零灰屏；压在系统壁纸之上、桌面图标/程序/台前调度/程序坞之下，
+ *    鼠标点击全部穿透给系统，并且出现在所有 Space 里。
+ * 2. **系统壁纸**：同样设成这张图（当前 Space 用 NSWorkspace；壁纸库里每个 Space / 每块屏幕
+ *    的配置也一起写，这一步会重启 WallpaperAgent，但灰屏被壁纸层盖住看不到）。
+ *    Mission Control、切换桌面、全屏 Space 的快照都取系统壁纸，所以这一份必须也一致。
  *
- * 窗口压在系统壁纸之上、桌面图标/程序/台前调度/程序坞之下，鼠标点击全部穿透给系统，
- * 并且出现在所有 Space 里，所以换壁纸 = 换窗口里的图片：不重启任何服务，没有灰屏，
- * 所有屏幕、所有桌面同时生效。
- *
- * 万一系统不认这个窗口层级（拿不到 NSWindow 或被系统策略挡住），自动退回系统壁纸。
+ * 万一系统不认这个窗口层级（拿不到 NSWindow 或被系统策略挡住），退化为只用系统壁纸。
  */
 class MacWallpaperBackend : WallpaperBackend {
     override val name = "macOS 桌面壁纸层"
 
     private val layer = MacWallpaperLayer()
+
+    /**
+     * 壁纸库（所有 Space 的系统壁纸）同步放在独立线程里做：它要重启 WallpaperAgent，比较慢，
+     * 而且连续换壁纸时只有最后一张有意义 —— 队列里过期的请求直接丢掉。
+     */
+    private val storeSyncExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "lucerna-wallpaper-store").apply { isDaemon = true }
+    }
+
+    @Volatile
+    private var storeSyncTarget: String? = null
 
     /** 桌面壁纸层是否在工作（冒烟测试回读用）。 */
     val layerActive: Boolean get() = layer.isActive()
@@ -47,26 +63,49 @@ class MacWallpaperBackend : WallpaperBackend {
     val layerScreens: Int get() = macScreenCount()
 
     override fun applyImage(path: String): Boolean {
-        if (layer.apply(path)) {
-            // 系统壁纸同步成同一张，作为「垫底」：调度中心 / 切空间的过渡动画是 macOS 用
-            // Space 快照合成的，桌面层窗口不在那份快照里，动画那一两帧只会画系统壁纸。
-            // 这里只有一次 NSWorkspace 调用（约 0.1 秒，不重启服务、不闪屏），
-            // 平时被壁纸层完全盖住，只有动画漏出来的瞬间才看得到同样的图。
-            MacNative.applyDesktopImage(path)
-            return true
+        // 1) 桌面壁纸层：所有屏幕立刻换图（不重启服务、零灰屏），这是用户当下看到的那一层
+        val layerOk = layer.apply(path)
+        if (!layerOk) {
+            println("[Lucerna] 壁纸层不可用（${layer.error}），本轮只设置系统壁纸")
         }
-        val reason = layer.error ?: "unknown"
-        println(
-            "[Lucerna] 壁纸层不可用（$reason），退回系统壁纸。" +
-                "若提示 AppKit 线程，请确认 JVM 带了 --add-opens java.desktop/sun.lwawt.macosx=ALL-UNNAMED",
-        )
-        return applySystemWallpaper(path)
+
+        // 2) 系统壁纸（当前 Space）：一次 NSWorkspace 调用，不重启服务
+        val systemOk = MacNative.applyDesktopImage(path) || appleScript(path)
+
+        // 3) 系统壁纸（壁纸库里每个 Space / 每块屏幕）：Mission Control、切换桌面、
+        //    全屏 Space 的快照都取系统壁纸，所以这一份也要一起更新。
+        //    这一步会重启 WallpaperAgent，但桌面已经被壁纸层盖住，灰屏看不到。
+        requestStoreSync(path)
+
+        return layerOk || systemOk
+    }
+
+    /** 排队同步「所有 Space 的系统壁纸」，连续请求只保留最后一个。 */
+    private fun requestStoreSync(path: String) {
+        storeSyncTarget = path
+        storeSyncExecutor.execute {
+            if (storeSyncTarget != path) return@execute
+            val synced = MacWallpaperStore.applyToAllSpaces(path)
+            if (!synced) println("[Lucerna] 系统壁纸的全桌面同步未完成（壁纸层不受影响）")
+        }
+    }
+
+    /** 等排队中的「所有 Space 系统壁纸同步」跑完（冒烟测试收尾用）。 */
+    fun awaitStoreSync(timeoutMs: Long = 15_000) {
+        val done = CountDownLatch(1)
+        runCatching { storeSyncExecutor.execute { done.countDown() } }
+        done.await(timeoutMs, TimeUnit.MILLISECONDS)
     }
 
     /** 屏幕数量/位置变化时重建壁纸窗口。 */
     fun refreshScreens() = layer.refreshScreens()
 
-    fun shutdown() = layer.shutdown()
+    fun shutdown() {
+        // 退出前把还在排队的那次「系统壁纸同步」做完，别让系统壁纸停在上一张
+        runCatching { awaitStoreSync(3000) }
+        runCatching { storeSyncExecutor.shutdownNow() }
+        layer.shutdown()
+    }
 
     /** 系统壁纸兜底路径（只在桌面层建不起来时用）：会把壁纸库也写一遍，保证每个桌面都换掉。 */
     private fun applySystemWallpaper(path: String): Boolean {

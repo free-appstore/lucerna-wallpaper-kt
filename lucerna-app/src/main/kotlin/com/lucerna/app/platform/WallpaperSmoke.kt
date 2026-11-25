@@ -81,14 +81,18 @@ object WallpaperSmoke {
                     // WindowServer 记录窗口层级有一点点延迟，等一小会儿再数
                     val onLevel = waitForLayerWindows(screens, desktopLevel)
                     val layerImage = layer.layerImagePath
-                    // 垫底系统壁纸也要是同一张：调度中心/切空间的过渡动画只画系统壁纸
+                    // 垫底系统壁纸也要是同一张（当前 Space）
                     val underlay = waitForSystemWallpaper(image, screens)
+                    // 壁纸库里每个 Space / 每块屏幕的系统壁纸也要是同一张
+                    val (storeMatched, storeTotal) = waitForStore(image)
                     detail = "layerWindows=$onLevel/${layer.layerWindowCount} level=$desktopLevel " +
-                        "underlay=$underlay/$screens image=${layerImage?.let { File(it).name }}"
+                        "underlay=$underlay/$screens store=$storeMatched/$storeTotal " +
+                        "image=${layerImage?.let { File(it).name }}"
                     roundOk = applied &&
                         screens == layer.layerWindowCount &&
                         onLevel >= screens &&
                         underlay >= screens &&
+                        storeTotal > 0 && storeMatched == storeTotal &&
                         layerImage != null &&
                         samePath(layerImage, image.absolutePath)
                 } else {
@@ -111,8 +115,10 @@ object WallpaperSmoke {
         } finally {
             fake?.let { stop(it) }
             if (layerBackend?.layerActive == true) {
-                // 层模式：把原来那张图画回层里，再恢复系统壁纸（垫底那张）和壁纸库
+                // 先等排队中的系统壁纸同步跑完，再换回原图，免得它把恢复结果覆盖掉
+                layerBackend.awaitStoreSync()
                 originalLayerImage?.let { layerBackend.applyImage(it) }
+                layerBackend.awaitStoreSync()
             }
             restore(storeBackup, originalScreenImages, screens)
         }
@@ -147,6 +153,21 @@ object WallpaperSmoke {
     private fun render(paths: AppPaths, name: String, fill: ColorFill): File? {
         val target = paths.renderDir.resolve(name).toFile()
         return ColorRenderer.writePng(fill, 1600, 900, target)
+    }
+
+    /** 等壁纸库里每个 Space / 屏幕的系统壁纸也变成目标图，返回（匹配数, 总数）。 */
+    private fun waitForStore(image: File): Pair<Int, Int> {
+        val deadline = System.currentTimeMillis() + 6000
+        var matched = 0
+        var total = 0
+        while (System.currentTimeMillis() < deadline) {
+            val images = MacWallpaperStore.configuredImagePaths()
+            total = images.size
+            matched = images.count { samePath(it, image.absolutePath) }
+            if (total > 0 && matched == total) return matched to total
+            Thread.sleep(200)
+        }
+        return matched to total
     }
 
     /** 等系统壁纸（垫底那张）也变成目标图，返回匹配的屏幕数。 */

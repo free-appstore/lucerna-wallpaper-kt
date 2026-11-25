@@ -92,8 +92,11 @@ LUCERNA_SMOKE=1 LUCERNA_SMOKE_TAB=color ./gradlew :lucerna-app:run
   - 只 `orderBack:`，从不 `orderFront:`：壁纸层永远不会被提到别人上面；
   - `canJoinAllSpaces + stationary + ignoresCycle`：出现在所有桌面（Mission Control 的每个 Space），
     切换桌面不重建、不闪；不进窗口切换器、无阴影、不抢焦点、失去激活也不隐藏；
-  - 换壁纸 = 换窗口里的图片（等比铺满），**不重启任何系统服务**，实测 0.2 秒左右、零灰屏，
+  - 换壁纸 = 换窗口里的图片（等比铺满），**可见画面 0.2 秒左右就换好、零灰屏**，
     所有屏幕（每块连接的显示器各一个窗口）和所有桌面同时生效；
+  - **系统壁纸也会同时设成同一张**（当前 Space 用 `NSWorkspace`；壁纸库里每个 Space / 每块屏幕的
+    配置在后台线程同步，会重启 `WallpaperAgent`，但灰屏被壁纸层盖住看不到）。
+    这样 Mission Control、切桌面、全屏 Space 的快照里也是同一张图；
   - 不进全屏 Space（不加 `fullScreenAuxiliary`）：全屏 app 绝不会被壁纸盖住；
     全屏 Space 里本来也看不到桌面，过渡动画靠「垫底的同款系统壁纸」兜住；
   - 有 2 秒一次的屏幕巡检：插上/拔掉显示器、改分辨率都会自动补建/销毁窗口；

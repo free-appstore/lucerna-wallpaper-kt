@@ -124,6 +124,7 @@ class AppController(
 
     fun shutdown() {
         applyExecutor.shutdownNow()
+        (backend as? com.lucerna.app.platform.MacWallpaperBackend)?.shutdown()
     }
 
     private fun applyLibraryInternal(item: WallpaperItem) {
