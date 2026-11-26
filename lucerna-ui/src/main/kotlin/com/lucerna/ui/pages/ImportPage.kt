@@ -52,6 +52,7 @@ import com.lucerna.ui.components.UpGlyph
 import com.lucerna.ui.components.VideoGlyph
 import com.lucerna.ui.state.LucernaState
 import com.lucerna.ui.theme.LucernaColors
+import com.lucerna.ui.theme.LucernaMetrics
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -85,7 +86,7 @@ fun ImportPage(state: LucernaState) {
     Column(Modifier.fillMaxSize().padding(bottom = 12.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(LucernaMetrics.SecondaryGap),
         ) {
             roots.forEach { (label, file) ->
                 PillButton(
@@ -121,14 +122,17 @@ fun ImportPage(state: LucernaState) {
         }
         Spacer(Modifier.height(8.dp))
 
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(LucernaMetrics.SecondaryGap),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             ImportFilter.entries.forEach { option ->
                 PillButton(
                     text = option.label,
                     selected = filter == option,
                     onClick = { filter = option },
                 )
-                Spacer(Modifier.width(5.dp))
             }
             Spacer(Modifier.weight(1f))
             Text("${entries.count { !it.isDirectory }} 个文件", fontSize = 9.5.sp, color = LucernaColors.TextTertiary)

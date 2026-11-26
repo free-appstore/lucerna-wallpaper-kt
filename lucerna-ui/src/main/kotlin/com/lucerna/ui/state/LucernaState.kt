@@ -27,6 +27,13 @@ enum class PanelTab(val label: String) {
     SETTINGS("设置"),
 }
 
+/** 「我的」页顶部的二级分类。 */
+enum class MineFilter(val label: String) {
+    IMAGE("图片"),
+    VIDEO("视频"),
+    COLOR("色彩"),
+}
+
 /** 请求打开预览窗口。 */
 data class PreviewRequest(val item: WallpaperItem)
 
@@ -61,16 +68,28 @@ class LucernaState(
 
     var busyMessage by mutableStateOf<String?>(null)
 
-    /** 「我的」页被收起的分类 key，默认全部展开。 */
-    var collapsedSections by mutableStateOf<Set<String>>(emptySet())
+    /** 「我的」页当前显示的类型。 */
+    var mineFilter by mutableStateOf(MineFilter.IMAGE)
         private set
+
+    init {
+        // 旧版本只保存了「当前色彩」，没有列表：启动时把这一份补进「我的 - 色彩」
+        if (settings.currentSource == WallpaperSource.COLOR && settings.colorFill !in settings.savedColors) {
+            settings = settings.copy(savedColors = listOf(settings.colorFill) + settings.savedColors)
+            persistSettings()
+        }
+    }
 
     val items: List<WallpaperItem> get() = library.items
 
-    fun isSectionExpanded(key: String): Boolean = key !in collapsedSections
+    /** 「我的 - 色彩」里的色彩壁纸，最近添加的在前。 */
+    val savedColors: List<ColorFill> get() = settings.savedColors
 
-    fun toggleSection(key: String) {
-        collapsedSections = if (key in collapsedSections) collapsedSections - key else collapsedSections + key
+    /** 正在使用的色彩；当前壁纸不是色彩时为 null。 */
+    val activeColor: ColorFill? get() = if (usingColor) settings.colorFill else null
+
+    fun selectMineFilter(next: MineFilter) {
+        mineFilter = next
     }
 
     val usingColor: Boolean
@@ -101,6 +120,33 @@ class LucernaState(
         persistSettings()
         actions.applyColor(normalized)
         toast = "已应用${normalized.summary()}"
+    }
+
+    /** 「添加并应用」：把当前草稿存进「我的 - 色彩」，同时立刻设为壁纸。 */
+    fun addAndApplyColor(fill: ColorFill) {
+        val normalized = fill.normalized()
+        colorDraft = normalized
+        settings = settings.copy(
+            colorFill = normalized,
+            currentSource = WallpaperSource.COLOR,
+            savedColors = listOf(normalized) + settings.savedColors.filterNot { it == normalized },
+        )
+        persistSettings()
+        actions.applyColor(normalized)
+        toast = "已添加并应用${normalized.summary()}"
+    }
+
+    /** 从「我的 - 色彩」移除一条；正在使用的壁纸保持不变。 */
+    fun removeSavedColor(fill: ColorFill) {
+        settings = settings.copy(savedColors = settings.savedColors.filterNot { it == fill })
+        persistSettings()
+        toast = "已从色彩列表移除${fill.summary()}"
+    }
+
+    /** 把一条已保存的色彩载入色彩页继续编辑。 */
+    fun editColor(fill: ColorFill) {
+        updateColorDraft(fill.normalized())
+        tab = PanelTab.COLOR
     }
 
     fun updateColorDraft(fill: ColorFill) {

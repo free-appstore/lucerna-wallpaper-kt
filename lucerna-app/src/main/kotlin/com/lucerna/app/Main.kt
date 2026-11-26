@@ -1,10 +1,16 @@
 package com.lucerna.app
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -24,13 +30,14 @@ import com.lucerna.ui.preview.PreviewWindowContent
 import com.lucerna.ui.state.PanelTab
 import com.lucerna.ui.theme.LucernaTheme
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.awt.Dimension
 import java.awt.event.WindowEvent
 import java.awt.event.WindowFocusListener
 import kotlin.time.Duration.Companion.seconds
 
 private const val PANEL_WIDTH = 392
-private const val PANEL_HEIGHT = 700
+private const val PANEL_HEIGHT = 740
 private const val PREVIEW_WIDTH = 1040
 private const val PREVIEW_HEIGHT = 700
 
@@ -87,9 +94,18 @@ fun main(args: Array<String>) {
     application {
         val environment = remember { AppEnvironment() }
         // 没有系统托盘时（少数 Linux 桌面）至少先把面板显示出来
-        var panelVisible by remember { mutableStateOf(smoke || !java.awt.SystemTray.isSupported()) }
+        val panelStartsVisible = smoke || !java.awt.SystemTray.isSupported()
+        var panelVisible by remember { mutableStateOf(panelStartsVisible) }
+        // 面板的展开状态（用户意图）；panelVisible 决定窗口是否还存在
+        var panelOpen by remember { mutableStateOf(panelStartsVisible) }
+        val panelProgress = remember { Animatable(if (panelStartsVisible) 1f else 0f) }
+        val panelScope = rememberCoroutineScope()
         var panelShownAt by remember { mutableStateOf(0L) }
         var panelHasFocused by remember { mutableStateOf(false) }
+        // 面板的 AWT 窗口。窗口隐藏时内容不会重组，所以「抢焦点」不能放在
+        // 窗口内容里的 LaunchedEffect(panelVisible) 里（第二次打开时它不会重跑），
+        // 这里保存窗口引用，由 showPanel 每次打开时主动请求焦点。
+        var panelWindow by remember { mutableStateOf<java.awt.Window?>(null) }
         var previewItem by remember { mutableStateOf<WallpaperItem?>(null) }
         val dismissGuard = remember { DismissGuard() }
         val state = remember {
@@ -106,7 +122,56 @@ fun main(args: Array<String>) {
             panelWindowState.position = WindowPosition.Absolute(bounds.x.dp, bounds.y.dp)
             panelWindowState.size = DpSize(bounds.width.dp, bounds.height.dp)
             panelShownAt = System.currentTimeMillis()
+            val wasVisible = panelVisible
+            panelOpen = true
             panelVisible = true
+            panelHasFocused = false
+            panelScope.launch {
+                // 窗口刚出现时从 0 开始；从收起动画中途再打开则接着当前进度走
+                if (!wasVisible) panelProgress.snapTo(0f)
+                panelProgress.animateTo(
+                    targetValue = 1f,
+                    animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+                )
+            }
+            // 每次打开都要重新抢焦点（窗口隐藏时 isVisible=false，重新显示后
+            // macOS 不会自动把它变成 key window；不成为 key window 就收不到失焦事件，
+            // 点面板外面也就关不掉了）。
+            panelScope.launch {
+                repeat(10) {
+                    val window = panelWindow
+                    if (window == null) {
+                        delay(60)
+                        return@repeat
+                    }
+                    if (window.isShowing) {
+                        MacNative.activateApp()
+                        window.toFront()
+                        window.requestFocus()
+                        window.requestFocusInWindow()
+                    }
+                    delay(60)
+                    if (window.isFocused && panelOpen) {
+                        panelHasFocused = true
+                        return@launch
+                    }
+                    if (!panelOpen) return@launch
+                }
+            }
+        }
+
+        /** 收起面板：缩放 / 透明度 1 -> 0，动画结束后才真正隐藏窗口（不退出程序）。 */
+        fun hidePanel() {
+            if (!panelOpen && !panelVisible) return
+            panelOpen = false
+            panelScope.launch {
+                panelProgress.animateTo(
+                    targetValue = 0f,
+                    animationSpec = tween(durationMillis = 140, easing = FastOutLinearInEasing),
+                )
+                // 动画途中又打开了面板时保持窗口存在
+                if (!panelOpen) panelVisible = false
+            }
         }
 
         DisposableEffect(Unit) {
@@ -114,16 +179,20 @@ fun main(args: Array<String>) {
                 initialStyle = environment.settingsStore.load().trayIconStyle,
                 onToggle = {
                     // 点击状态栏：已打开就收起；刚因失焦收起时忽略这次点击
-                    if (panelVisible) {
-                        panelVisible = false
+                    if (panelOpen) {
                         dismissGuard.markHidden()
+                        hidePanel()
                     } else if (!dismissGuard.consumeRecent()) {
                         showPanel()
                     }
                 },
             )
             val installed = tray.install()
-            if (!installed) panelVisible = true
+            if (!installed) {
+                panelOpen = true
+                panelVisible = true
+                panelScope.launch { panelProgress.snapTo(1f) }
+            }
             environment.tray = tray
             environment.quitAction = { exitApplication() }
             println("[Lucerna] started backend=${environment.backend.name} tray=$installed")
@@ -162,7 +231,7 @@ fun main(args: Array<String>) {
 
         key("panel") {
             Window(
-                onCloseRequest = { panelVisible = false },
+                onCloseRequest = { hidePanel() },
                 state = panelWindowState,
                 visible = panelVisible,
                 title = "Lucerna",
@@ -173,14 +242,16 @@ fun main(args: Array<String>) {
                 focusable = true,
                 onPreviewKeyEvent = { event ->
                     if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
-                        panelVisible = false
+                        hidePanel()
                         true
                     } else {
                         false
                     }
                 },
             ) {
+                val windowScope = rememberCoroutineScope()
                 LaunchedEffect(window) {
+                    panelWindow = window
                     window.background = java.awt.Color(0, 0, 0, 0)
                     window.minimumSize = Dimension(PANEL_WIDTH, PANEL_HEIGHT)
                     window.maximumSize = Dimension(PANEL_WIDTH, PANEL_HEIGHT)
@@ -191,26 +262,35 @@ fun main(args: Array<String>) {
                         }
 
                         override fun windowLostFocus(event: WindowEvent?) {
-                            // 刚弹出时 macOS 可能短暂失焦；预览窗口获得焦点时也不要收起面板
-                            val settled = System.currentTimeMillis() - panelShownAt > 1500
-                            if (previewItem == null && panelVisible && panelHasFocused && settled) {
-                                dismissGuard.markHidden()
-                                panelVisible = false
+                            if (previewItem != null || !panelOpen || !panelHasFocused) return
+                            // 切换瞬间可能只是短暂失焦：稍等一下，确认确实没有焦点再收起
+                            windowScope.launch {
+                                delay(120)
+                                val settled = System.currentTimeMillis() - panelShownAt > 250
+                                if (settled && panelOpen && !window.isFocused) {
+                                    dismissGuard.markHidden()
+                                    hidePanel()
+                                }
                             }
                         }
                     })
                 }
-                LaunchedEffect(panelVisible) {
-                    if (panelVisible) {
-                        panelShownAt = System.currentTimeMillis()
-                        panelHasFocused = false
-                        MacNative.activateApp()
-                        window.toFront()
-                        window.requestFocus()
-                    }
-                }
                 LucernaTheme {
-                    LucernaPanel(state, Modifier.fillMaxSize())
+                    // 展开 / 收起：缩放与透明度一起从 0 到 1
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                val progress = panelProgress.value
+                                scaleX = progress
+                                scaleY = progress
+                                alpha = progress
+                                // 从面板顶部水平居中的位置展开 / 收起
+                                transformOrigin = TransformOrigin(0.5f, 0f)
+                            },
+                    ) {
+                        LucernaPanel(state, Modifier.fillMaxSize())
+                    }
                 }
             }
         }
@@ -303,10 +383,11 @@ fun main(args: Array<String>) {
                 println("[Lucerna] SMOKE_PANEL_READY")
                 if (System.getenv("LUCERNA_SMOKE_REOPEN") == "1") {
                     delay(1.2.seconds)
-                    panelVisible = false
                     dismissGuard.markHidden()
-                    delay(0.9.seconds)
+                    hidePanel()
+                    delay(1.4.seconds)
                     showPanel()
+                    delay(0.6.seconds)
                     println("[Lucerna] SMOKE_REOPENED")
                 }
             }

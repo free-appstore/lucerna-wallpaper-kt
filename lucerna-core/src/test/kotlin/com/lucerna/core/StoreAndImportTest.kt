@@ -31,11 +31,13 @@ class StoreAndImportTest {
     fun `设置读写往返`() {
         val paths = tempPaths()
         val store = SettingsStore(paths)
+        val solid = Settings().colorFill.copy(kind = ColorKind.SOLID)
         val settings = Settings(
             volume = 0.35f,
             audioEnabled = true,
             launchAtLogin = true,
             colorFill = Settings().colorFill.copy(kind = ColorKind.STEPS, steps = 7),
+            savedColors = listOf(solid),
         )
         store.save(settings)
         val loaded = store.load()
@@ -44,6 +46,7 @@ class StoreAndImportTest {
         assertTrue(loaded.launchAtLogin)
         assertEquals(7, loaded.colorFill.steps)
         assertEquals(ColorKind.STEPS, loaded.colorFill.kind)
+        assertEquals(listOf(solid), loaded.savedColors)
     }
 
     @Test

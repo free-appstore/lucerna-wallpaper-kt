@@ -124,7 +124,12 @@ data class ColorFill(
 
     fun addingColor(color: Rgb = colors.lastOrNull() ?: Rgb.White): ColorFill {
         if (!canAddColor()) return this
-        return copy(colors = colors + color.normalized())
+        val next = colors + color.normalized()
+        // 色阶的阶数不能少于颜色数量，加色时自动抬到新数量
+        return copy(
+            colors = next,
+            steps = if (kind == ColorKind.STEPS) maxOf(steps, next.size) else steps,
+        )
     }
 
     fun removingColor(index: Int): ColorFill {
@@ -136,7 +141,9 @@ data class ColorFill(
     /** 把旧数据或连续操作后的状态收拢到合法范围。 */
     fun normalized(): ColorFill {
         val safeAngle = if (angle.isFinite()) angle.roundToInt().mod(360) else 90
-        val safeSteps = steps.coerceIn(MIN_STEPS, MAX_STEPS)
+        // 色阶至少为 2 阶，且不能少于颜色数量
+        val minSteps = if (kind == ColorKind.STEPS) colors.size.coerceIn(MIN_STEPS, MAX_STEPS) else MIN_STEPS
+        val safeSteps = steps.coerceIn(minSteps, MAX_STEPS)
         // 已经合法时直接返回自己：拖动滑杆时每次取色都要归一化，省掉一次颜色列表拷贝
         if (safeAngle.toFloat() == angle && safeSteps == steps && colorsAreValid()) return this
         val safeColors = colors
@@ -179,7 +186,7 @@ data class ColorFill(
     }
 
     companion object {
-        const val MAX_COLORS = 10
+        const val MAX_COLORS = 20
         const val MIN_STEPS = 2
         const val MAX_STEPS = 20
 

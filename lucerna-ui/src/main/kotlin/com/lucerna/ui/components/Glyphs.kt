@@ -137,20 +137,6 @@ fun PowerGlyph(modifier: Modifier = Modifier, color: Color = LucernaColors.Dange
     }
 }
 
-/** 折叠菜单的箭头，默认朝右，展开时由调用方旋转 90°。 */
-@Composable
-fun ChevronGlyph(modifier: Modifier = Modifier, color: Color = LucernaColors.TextTertiary) {
-    Canvas(modifier.size(10.dp)) {
-        val w = size.width
-        val path = Path().apply {
-            moveTo(w * 0.34f, w * 0.20f)
-            lineTo(w * 0.68f, w * 0.50f)
-            lineTo(w * 0.34f, w * 0.80f)
-        }
-        drawPath(path, color, style = Stroke(width = w * 0.14f, cap = StrokeCap.Round, join = StrokeJoin.Round))
-    }
-}
-
 /** 播放三角。 */
 @Composable
 fun PlayGlyph(modifier: Modifier = Modifier, color: Color = Color.White) {

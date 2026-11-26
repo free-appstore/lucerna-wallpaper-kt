@@ -21,10 +21,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lucerna.ui.theme.LucernaColors
+import com.lucerna.ui.theme.LucernaMetrics
 import com.lucerna.ui.theme.LucernaText
 
 /** 半透明圆角卡片，面板里所有内容块的基础容器。 */
@@ -44,38 +49,58 @@ fun GlassCard(
     )
 }
 
-/** 小圆角按钮 / 胶囊。 */
+/** 二级胶囊：分页下方那排选项的统一控件（尺寸见 [LucernaMetrics]）。 */
 @Composable
 fun PillButton(
     text: String,
     modifier: Modifier = Modifier,
     selected: Boolean = false,
     enabled: Boolean = true,
+    count: Int? = null,
     onClick: () -> Unit,
 ) {
     Box(
         modifier = modifier
-            .height(26.dp)
-            .clip(RoundedCornerShape(8.dp))
+            .height(LucernaMetrics.SecondaryHeight)
+            .clip(RoundedCornerShape(LucernaMetrics.SecondaryRadius))
             .background(if (selected) LucernaColors.AccentSoft else Color(0x12FFFFFF))
             .border(
                 1.dp,
                 if (selected) LucernaColors.Accent.copy(alpha = 0.65f) else LucernaColors.Border,
-                RoundedCornerShape(8.dp),
+                RoundedCornerShape(LucernaMetrics.SecondaryRadius),
             )
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 10.dp),
+            .padding(horizontal = LucernaMetrics.SecondaryHorizontalPadding),
         contentAlignment = Alignment.Center,
     ) {
+        val labelColor = when {
+            !enabled -> LucernaColors.TextTertiary
+            selected -> LucernaColors.Accent
+            else -> LucernaColors.TextSecondary
+        }
         Text(
-            text,
+            text = if (count == null) {
+                AnnotatedString(text)
+            } else {
+                buildAnnotatedString {
+                    append(text)
+                    withStyle(
+                        SpanStyle(
+                            fontSize = 9.sp,
+                            color = if (selected) {
+                                LucernaColors.Accent.copy(alpha = 0.65f)
+                            } else {
+                                LucernaColors.TextTertiary
+                            },
+                        ),
+                    ) {
+                        append(" $count")
+                    }
+                }
+            },
             fontSize = 11.sp,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-            color = when {
-                !enabled -> LucernaColors.TextTertiary
-                selected -> LucernaColors.Accent
-                else -> LucernaColors.TextSecondary
-            },
+            color = labelColor,
         )
     }
 }

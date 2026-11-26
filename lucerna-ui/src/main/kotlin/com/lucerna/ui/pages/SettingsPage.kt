@@ -43,6 +43,7 @@ import com.lucerna.ui.components.ThinDivider
 import com.lucerna.ui.components.ToggleRow
 import com.lucerna.ui.state.LucernaState
 import com.lucerna.ui.theme.LucernaColors
+import com.lucerna.ui.theme.LucernaMetrics
 import kotlin.math.roundToInt
 
 private val TRAY_ICON_OPTIONS = listOf(TrayIconStyle.COLOR, TrayIconStyle.MONO)
@@ -220,10 +221,10 @@ private fun IconStyleSlider(
 
     BoxWithConstraints(
         modifier = modifier
-            .height(32.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .height(LucernaMetrics.SecondaryHeight)
+            .clip(RoundedCornerShape(LucernaMetrics.SecondaryRadius))
             .background(Color(0x12FFFFFF))
-            .border(1.dp, LucernaColors.Border, RoundedCornerShape(10.dp)),
+            .border(1.dp, LucernaColors.Border, RoundedCornerShape(LucernaMetrics.SecondaryRadius)),
     ) {
         val widthPx = with(density) { maxWidth.toPx() }
         val segment = maxWidth / TRAY_ICON_OPTIONS.size
@@ -239,8 +240,8 @@ private fun IconStyleSlider(
                 .offset(x = thumbOffset)
                 .width(segment)
                 .fillMaxHeight()
-                .padding(3.dp)
-                .clip(RoundedCornerShape(8.dp))
+                .padding(2.dp)
+                .clip(RoundedCornerShape(6.dp))
                 .background(LucernaColors.AccentSoft),
         )
         Box(
@@ -262,7 +263,7 @@ private fun IconStyleSlider(
                     ) {
                         Text(
                             option.label,
-                            fontSize = 11.5.sp,
+                            fontSize = 11.sp,
                             fontWeight = if (optionIndex == index) FontWeight.SemiBold else FontWeight.Normal,
                             color = if (optionIndex == index) LucernaColors.TextPrimary else LucernaColors.TextTertiary,
                         )

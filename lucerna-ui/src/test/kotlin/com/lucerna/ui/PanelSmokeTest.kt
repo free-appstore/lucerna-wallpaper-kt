@@ -3,8 +3,16 @@ package com.lucerna.ui
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.click
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.percentOffset
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.runComposeUiTest
 import androidx.compose.ui.unit.dp
 import com.lucerna.core.actions.WallpaperActions
@@ -12,6 +20,7 @@ import com.lucerna.core.media.Importer
 import com.lucerna.core.model.ColorFill
 import com.lucerna.core.model.ColorKind
 import com.lucerna.core.model.LibraryData
+import com.lucerna.core.model.Rgb
 import com.lucerna.core.model.TrayIconStyle
 import com.lucerna.core.model.WallpaperItem
 import com.lucerna.core.model.WallpaperType
@@ -20,9 +29,12 @@ import com.lucerna.core.store.LibraryStore
 import com.lucerna.core.store.SettingsStore
 import com.lucerna.ui.panel.LucernaPanel
 import com.lucerna.ui.state.LucernaState
+import com.lucerna.ui.state.MineFilter
+import com.lucerna.ui.state.PanelTab
 import com.lucerna.ui.theme.LucernaTheme
 import java.nio.file.Files
 import kotlin.test.Test
+import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
@@ -45,7 +57,7 @@ class PanelSmokeTest {
 
         setContent {
             LucernaTheme {
-                LucernaPanel(state, Modifier.size(392.dp, 640.dp))
+                LucernaPanel(state, Modifier.size(392.dp, 740.dp))
             }
         }
 
@@ -53,12 +65,14 @@ class PanelSmokeTest {
         onNodeWithText("我的").assertExists()
         onNodeWithText("图库还是空的").assertExists()
 
-        // 色彩页：默认渐变，切到色阶后出现阶梯数量
+        // 色彩页：默认渐变，切到色阶后出现阶数输入
         onNodeWithText("色彩").performClick()
         onNodeWithText("渐变").assertExists()
-        onNodeWithText("阶梯数量").assertDoesNotExist()
+        onNodeWithText("添加并应用").assertExists()
+        onNodeWithText("应用色彩壁纸").assertDoesNotExist()
+        onNodeWithText("阶数").assertDoesNotExist()
         onNodeWithText("色阶").performClick()
-        onNodeWithText("阶梯数量").assertExists()
+        onNodeWithText("阶数").assertExists()
 
         // 设置页
         onNodeWithText("设置").performClick()
@@ -78,7 +92,7 @@ class PanelSmokeTest {
     }
 
     @Test
-    fun `我的页按照片视频分类折叠`() = runComposeUiTest {
+    fun `我的页按图片视频色彩切换`() = runComposeUiTest {
         val root = Files.createTempDirectory("lucerna-ui-sections").toFile()
         val paths = AppPaths.at(root).also { it.ensure() }
         val actions = RecordingActions()
@@ -99,26 +113,35 @@ class PanelSmokeTest {
             actions = actions,
             importer = Importer(paths, library),
         )
+        state.addAndApplyColor(ColorFill(kind = ColorKind.STEPS, steps = 8))
 
         setContent {
             LucernaTheme {
-                LucernaPanel(state, Modifier.size(392.dp, 640.dp))
+                LucernaPanel(state, Modifier.size(392.dp, 740.dp))
             }
         }
 
-        onNodeWithText("照片（2）").assertExists()
-        onNodeWithText("视频（1）").assertExists()
-        // 没有色彩壁纸时不显示色彩分组
-        onNodeWithText("色彩（1）").assertDoesNotExist()
+        // 顶部二级分类带数量；默认显示图片
+        onNodeWithText("图片 2").assertExists()
+        onNodeWithText("视频 1").assertExists()
+        onNodeWithText("色彩 1").assertExists()
+        onNodeWithText("one.png").assertExists()
+        onNodeWithText("clip.mp4").assertDoesNotExist()
 
-        onNodeWithText("照片（2）").performClick()
-        mainClock.advanceTimeBy(400)
-        waitForIdle()
+        // 切到视频：只显示视频
+        onNodeWithText("视频 1").performClick()
+        assertEquals(MineFilter.VIDEO, state.mineFilter)
+        onNodeWithText("clip.mp4").assertExists()
         onNodeWithText("one.png").assertDoesNotExist()
 
-        onNodeWithText("照片（2）").performClick()
-        mainClock.advanceTimeBy(400)
-        waitForIdle()
+        // 切到色彩：只显示色彩壁纸
+        onNodeWithText("色彩 1").performClick()
+        assertEquals(MineFilter.COLOR, state.mineFilter)
+        onNodeWithText("色彩壁纸").assertExists()
+        onNodeWithText("clip.mp4").assertDoesNotExist()
+
+        // 切回图片
+        onNodeWithText("图片 2").performClick()
         onNodeWithText("one.png").assertExists()
     }
 
@@ -139,6 +162,212 @@ class PanelSmokeTest {
         assertEquals(8, settings.load().colorFill.steps)
         assertEquals(1, actions.appliedColors.size)
         assertTrue(state.toast?.contains("色阶") == true)
+    }
+
+    @Test
+    fun `色彩页正好铺满面板且阶数输入受范围约束`() = runComposeUiTest {
+        val root = Files.createTempDirectory("lucerna-ui-fit").toFile()
+        val paths = AppPaths.at(root).also { it.ensure() }
+        val library = LibraryStore(paths)
+        val state = LucernaState(paths, SettingsStore(paths), library, RecordingActions(), Importer(paths, library))
+        state.selectTab(PanelTab.COLOR)
+        state.updateColorDraft(
+            ColorFill(
+                kind = ColorKind.STEPS,
+                colors = listOf(Rgb(0.9f, 0.4f, 0.2f), Rgb(0.2f, 0.4f, 0.9f), Rgb(0.3f, 0.8f, 0.5f)),
+                steps = 5,
+            ),
+        )
+
+        setContent {
+            LucernaTheme {
+                LucernaPanel(state, Modifier.size(392.dp, 740.dp))
+            }
+        }
+
+        // 预览固定 16:9
+        val preview = onNodeWithContentDescription("色彩预览").getUnclippedBoundsInRoot()
+        assertEquals(360f, (preview.right - preview.left).value, 0.5f)
+        assertEquals(202.5f, (preview.bottom - preview.top).value, 0.5f)
+
+        // 方向、阶数与按钮都在面板内，底部不需要滚动
+        val steps = onNodeWithText("阶数").getUnclippedBoundsInRoot()
+        val button = onNodeWithText("添加并应用").getUnclippedBoundsInRoot()
+        assertTrue(button.bottom.value in 700f..730f)
+        assertTrue(steps.bottom.value < button.top.value)
+
+        // 角度 / 阶数并排，两个 label 顶部对齐（左右各自距卡片 10dp）
+        val angleLabel = onNodeWithText("角度").getUnclippedBoundsInRoot()
+        assertEquals(angleLabel.top.value, steps.top.value, 0.5f)
+
+        // 阶数输入框：2–20，且不少于 3 个颜色
+        onNodeWithText("5").performTextReplacement("12")
+        assertEquals(12, state.colorDraft.steps)
+        onNodeWithText("12").performTextReplacement("30")
+        assertEquals(12, state.colorDraft.steps)
+        onNodeWithText("30").performTextReplacement("2")
+        assertEquals(12, state.colorDraft.steps)
+        onNodeWithText("2").performTextReplacement("3")
+        assertEquals(3, state.colorDraft.steps)
+    }
+
+    @Test
+    fun `阶数可以用上下按钮调节`() = runComposeUiTest {
+        val root = Files.createTempDirectory("lucerna-ui-steps").toFile()
+        val paths = AppPaths.at(root).also { it.ensure() }
+        val library = LibraryStore(paths)
+        val state = LucernaState(paths, SettingsStore(paths), library, RecordingActions(), Importer(paths, library))
+        state.selectTab(PanelTab.COLOR)
+        state.updateColorDraft(
+            ColorFill(
+                kind = ColorKind.STEPS,
+                colors = listOf(Rgb(0.2f, 0.4f, 0.8f), Rgb(0.9f, 0.1f, 0.1f)),
+                steps = 4,
+            ),
+        )
+
+        setContent {
+            LucernaTheme {
+                LucernaPanel(state, Modifier.size(392.dp, 740.dp))
+            }
+        }
+
+        // 输入框先拿到焦点，再点上下按钮：框里的数字必须跟着变
+        onNodeWithText("4").performClick()
+        onNodeWithContentDescription("阶数加一").performClick()
+        assertEquals(5, state.colorDraft.steps)
+        onNodeWithText("5").assertExists()
+        onNodeWithContentDescription("阶数减一").performClick()
+        assertEquals(4, state.colorDraft.steps)
+        onNodeWithText("4").assertExists()
+        onNodeWithText("5").assertDoesNotExist()
+    }
+
+    @Test
+    fun `颜色输入支持十六进制和十进制切换`() = runComposeUiTest {
+        val root = Files.createTempDirectory("lucerna-ui-hex").toFile()
+        val paths = AppPaths.at(root).also { it.ensure() }
+        val library = LibraryStore(paths)
+        val state = LucernaState(paths, SettingsStore(paths), library, RecordingActions(), Importer(paths, library))
+        state.selectTab(PanelTab.COLOR)
+        state.updateColorDraft(
+            ColorFill(
+                kind = ColorKind.STEPS,
+                colors = listOf(Rgb(0.2f, 0.4f, 0.8f), Rgb(0.9f, 0.1f, 0.1f)),
+                steps = 4,
+            ),
+        )
+
+        setContent {
+            LucernaTheme {
+                LucernaPanel(state, Modifier.size(392.dp, 740.dp))
+            }
+        }
+
+        // 十六进制：'#' 前缀 + 6 位色值
+        onNodeWithText("#").assertExists()
+        onNodeWithText("3366CC").assertExists()
+        onAllNodesWithText("R").assertCountEquals(1)
+
+        // 十进制：R / G / B 三个输入框（滑杆标签 + 输入框标签各一个）
+        onNodeWithText("10进制").performClick()
+        onAllNodesWithText("R").assertCountEquals(2)
+        onAllNodesWithText("102").assertCountEquals(2)
+    }
+
+    @Test
+    fun `拖动分量滑杆只修改当前选中的颜色`() = runComposeUiTest {
+        val root = Files.createTempDirectory("lucerna-ui-slider").toFile()
+        val paths = AppPaths.at(root).also { it.ensure() }
+        val library = LibraryStore(paths)
+        val state = LucernaState(paths, SettingsStore(paths), library, RecordingActions(), Importer(paths, library))
+        state.selectTab(PanelTab.COLOR)
+        val first = Rgb(0.2f, 0.4f, 0.8f)
+        val second = Rgb(0.9f, 0.3f, 0.1f)
+        state.updateColorDraft(ColorFill(kind = ColorKind.STEPS, colors = listOf(first, second), steps = 4))
+
+        setContent {
+            LucernaTheme {
+                LucernaPanel(state, Modifier.size(392.dp, 740.dp))
+            }
+        }
+
+        // 先切到第二个颜色，再拖 R：不应写回第一个颜色，也不该改动 G / B
+        state.selectedColorIndex = 1
+        waitForIdle()
+        onNodeWithContentDescription("R 分量滑杆").performTouchInput { click(percentOffset(0.8f, 0.5f)) }
+        waitForIdle()
+
+        assertEquals(first, state.colorDraft.colors[0])
+        val changed = state.colorDraft.colors[1]
+        assertTrue(changed.r > 0.7f)
+        assertEquals(second.g, changed.g)
+        assertEquals(second.b, changed.b)
+    }
+
+    @Test
+    fun `添加并应用会把色彩存进我的色彩列表`() {
+        val root = Files.createTempDirectory("lucerna-ui-colors").toFile()
+        val paths = AppPaths.at(root).also { it.ensure() }
+        val actions = RecordingActions()
+        val library = LibraryStore(paths)
+        val settings = SettingsStore(paths)
+        val state = LucernaState(paths, settings, library, actions, Importer(paths, library))
+
+        val fill = ColorFill(kind = ColorKind.SOLID, colors = listOf(Rgb(0.2f, 0.4f, 0.8f)))
+        state.updateColorDraft(fill)
+        state.addAndApplyColor(fill)
+
+        assertEquals(listOf(fill), state.savedColors)
+        assertEquals(listOf(fill), settings.load().savedColors)
+        assertEquals(fill, settings.load().colorFill)
+        assertEquals(1, actions.appliedColors.size)
+        assertEquals(fill, state.activeColor)
+        assertContains(state.toast.orEmpty(), "添加并应用")
+
+        // 同一份色彩再点一次不会重复入列
+        state.addAndApplyColor(fill)
+        assertEquals(1, state.savedColors.size)
+
+        // 新的一份排在最前
+        val second = fill.copy(colors = listOf(Rgb(0.9f, 0.3f, 0.1f)))
+        state.addAndApplyColor(second)
+        assertEquals(listOf(second, fill), state.savedColors)
+
+        // 移除后列表与磁盘同步，正在使用的壁纸保持不动
+        state.removeSavedColor(fill)
+        assertEquals(listOf(second), state.savedColors)
+        assertEquals(listOf(second), settings.load().savedColors)
+        assertEquals(second, settings.load().colorFill)
+    }
+
+    @Test
+    fun `添加并应用后我的页能在色彩分类看到`() = runComposeUiTest {
+        val root = Files.createTempDirectory("lucerna-ui-color-grid").toFile()
+        val paths = AppPaths.at(root).also { it.ensure() }
+        val actions = RecordingActions()
+        val library = LibraryStore(paths)
+        val settings = SettingsStore(paths)
+        val state = LucernaState(paths, settings, library, actions, Importer(paths, library))
+
+        state.addAndApplyColor(ColorFill(kind = ColorKind.SOLID, colors = listOf(Rgb(0.2f, 0.4f, 0.8f))))
+
+        setContent {
+            LucernaTheme {
+                LucernaPanel(state, Modifier.size(392.dp, 740.dp))
+            }
+        }
+
+        // 只有色彩时默认停在「图片」，切到「色彩」才能看到
+        onNodeWithText("图片 0").assertExists()
+        onNodeWithText("色彩 1").performClick()
+        onNodeWithText("使用中").assertExists()
+
+        // 编辑会回到色彩页继续调色
+        state.editColor(ColorFill(kind = ColorKind.STEPS, steps = 6))
+        assertEquals(PanelTab.COLOR, state.tab)
+        assertEquals(ColorKind.STEPS, state.colorDraft.kind)
+        assertEquals(6, state.colorDraft.steps)
     }
 }
 

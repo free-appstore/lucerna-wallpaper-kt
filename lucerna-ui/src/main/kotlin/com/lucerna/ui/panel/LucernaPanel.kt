@@ -1,6 +1,9 @@
 package com.lucerna.ui.panel
 
 import androidx.compose.animation.*
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -13,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -27,14 +31,15 @@ import com.lucerna.ui.state.LucernaState
 import com.lucerna.ui.state.PanelTab
 import com.lucerna.ui.theme.LucernaColors
 import com.lucerna.ui.theme.LucernaText
+import kotlin.math.abs
 import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.seconds
 
 /**
  * 状态栏弹出的主面板。
  *
- * 尺寸固定为 392×640，四周留出 1px 半透明描边和一圈阴影；
- * 分页内容自行滚动，面板本身不滚动。
+ * 尺寸固定为 392×740，四周留出 1px 半透明描边和一圈阴影；
+ * 分页内容自行排布，面板本身不滚动。
  */
 @Composable
 fun LucernaPanel(state: LucernaState, modifier: Modifier = Modifier) {
@@ -97,7 +102,15 @@ private fun PanelHeader(memoryMb: Long, onClose: () -> Unit) {
 
 @Composable
 private fun TabBar(current: PanelTab, onSelect: (PanelTab) -> Unit) {
-    Row(
+    val tabs = PanelTab.entries
+    val spacing = 3.dp
+    // 选中状态的滑块在分页之间平移，而不是直接跳过去
+    val progress by animateFloatAsState(
+        targetValue = tabs.indexOf(current).coerceAtLeast(0).toFloat(),
+        animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+        label = "tabIndicator",
+    )
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
@@ -106,25 +119,37 @@ private fun TabBar(current: PanelTab, onSelect: (PanelTab) -> Unit) {
             .background(Color(0x0CFFFFFF))
             .border(1.dp, LucernaColors.Border, RoundedCornerShape(10.dp))
             .padding(3.dp),
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
     ) {
-        PanelTab.entries.forEach { tab ->
-            val selected = tab == current
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            val itemWidth = (maxWidth - spacing * (tabs.size - 1)) / tabs.size
             Box(
                 modifier = Modifier
-                    .weight(1f)
-                    .fillMaxSize()
+                    .offset(x = (itemWidth + spacing) * progress)
+                    .width(itemWidth)
+                    .fillMaxHeight()
                     .clip(RoundedCornerShape(7.dp))
-                    .background(if (selected) LucernaColors.AccentSoft else Color.Transparent)
-                    .clickable { onSelect(tab) },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    tab.label,
-                    fontSize = 12.sp,
-                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                    color = if (selected) LucernaColors.Accent else LucernaColors.TextSecondary,
-                )
+                    .background(LucernaColors.AccentSoft),
+            )
+            Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(spacing)) {
+                tabs.forEachIndexed { index, tab ->
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(7.dp))
+                            .clickable { onSelect(tab) },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        // 文字颜色跟着滑块走：滑块经过时两边的标签一起过渡
+                        val distance = abs(progress - index).coerceIn(0f, 1f)
+                        Text(
+                            tab.label,
+                            fontSize = 12.sp,
+                            fontWeight = if (tab == current) FontWeight.SemiBold else FontWeight.Normal,
+                            color = lerp(LucernaColors.TextSecondary, LucernaColors.Accent, 1f - distance),
+                        )
+                    }
+                }
             }
         }
     }

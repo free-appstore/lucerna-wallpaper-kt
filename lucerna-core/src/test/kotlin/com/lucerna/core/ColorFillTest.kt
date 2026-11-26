@@ -67,6 +67,22 @@ class ColorFillTest {
     }
 
     @Test
+    fun `色阶阶数不少于颜色数量`() {
+        val colors = List(5) { Rgb.of(0x336699) }
+
+        // 旧数据或手输更小的阶数时，归一化会抬到颜色数量
+        assertEquals(5, ColorFill(kind = ColorKind.STEPS, colors = colors, steps = 2).normalized().steps)
+
+        // 加色后阶数跟着涨，不会出现颜色比阶数多
+        val grown = ColorFill(kind = ColorKind.STEPS, colors = colors.take(2), steps = 2).addingColor()
+        assertEquals(3, grown.colors.size)
+        assertEquals(3, grown.steps)
+
+        // 渐变没有这个下限
+        assertEquals(2, ColorFill(kind = ColorKind.GRADIENT, colors = colors, steps = 2).normalized().steps)
+    }
+
+    @Test
     fun `十六进制解析`() {
         assertEquals(Rgb.of(0xFFC46B), Rgb.parseHex("#FFC46B"))
         assertEquals(Rgb.of(0x0A0B0C), Rgb.parseHex("0a0b0c"))

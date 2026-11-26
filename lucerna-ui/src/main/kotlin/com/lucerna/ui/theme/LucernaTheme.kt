@@ -9,6 +9,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /** 面板的视觉语言：夜空底色 + 琥珀色荧光。 */
@@ -36,6 +37,19 @@ object LucernaText {
     val title = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = LucernaColors.TextPrimary)
     val subtitle = TextStyle(fontSize = 10.sp, fontWeight = FontWeight.Normal, color = LucernaColors.TextTertiary)
     val button = TextStyle(fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF1A1408))
+}
+
+/**
+ * 二级控件（一级分页下方那排小胶囊）的统一尺寸。
+ *
+ * 以「导入」页的胶囊为基准：「我的」的分类、导入的位置与筛选、色彩的类型
+ * 都使用这一份尺寸，不要各自写 height / radius。
+ */
+object LucernaMetrics {
+    val SecondaryHeight = 26.dp
+    val SecondaryRadius = 8.dp
+    val SecondaryHorizontalPadding = 10.dp
+    val SecondaryGap = 6.dp
 }
 
 @Composable

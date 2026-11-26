@@ -40,6 +40,8 @@ data class Settings(
     val currentWallpaperId: String? = null,
     val currentSource: WallpaperSource = WallpaperSource.LIBRARY,
     val colorFill: ColorFill = ColorFill.default(),
+    /** 「我的 - 色彩」列表，最近添加的在前；[colorFill] 可能不在其中。 */
+    val savedColors: List<ColorFill> = emptyList(),
     /** 壁纸音量，0..1。 */
     val volume: Float = 0.8f,
     /** 是否播放视频壁纸的声音。 */
@@ -59,5 +61,7 @@ data class Settings(
     fun normalized(): Settings = copy(
         volume = volume.coerceIn(0f, 1f),
         colorFill = colorFill.normalized(),
+        // 去重后每份色彩只留一条，避免同一份色彩在「我的」里重复出现
+        savedColors = savedColors.map { it.normalized() }.distinct(),
     )
 }
