@@ -2,6 +2,9 @@
 
 package com.lucerna.ui.pages
 
+import androidx.compose.foundation.ContextMenuArea
+import androidx.compose.foundation.ContextMenuItem
+import androidx.compose.foundation.ContextMenuState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -60,7 +63,9 @@ import java.io.File
 
 /** 「导入」页：面板内嵌的文件浏览器，不弹系统对话框。 */
 @Composable
-fun ImportPage(state: LucernaState) {
+fun ImportPage(
+    state: LucernaState,
+) {
     val scope = rememberCoroutineScope()
     var dir by remember { mutableStateOf(File(state.settings.importDir ?: System.getProperty("user.home"))) }
     var filter by remember { mutableStateOf(ImportFilter.ALL) }
@@ -70,7 +75,10 @@ fun ImportPage(state: LucernaState) {
     // 常用位置在进程内不会变，避免每次重组都去 stat 一遍文件系统
     val roots = remember { FileBrowser.roots() }
 
-    LaunchedEffect(dir, filter) {
+    LaunchedEffect(
+        key1 = dir,
+        key2 = filter,
+    ) {
         loading = true
         selection = emptySet()
         entries = withContext(Dispatchers.IO) { FileBrowser.list(dir, filter) }
@@ -83,7 +91,8 @@ fun ImportPage(state: LucernaState) {
         state.rememberImportDir(target)
     }
 
-    Column(Modifier.fillMaxSize().padding(bottom = 12.dp)) {
+    // 底部与右侧留白保持一致：面板下 12dp + 这里 4dp = 右侧 16dp
+    Column(Modifier.fillMaxSize().padding(bottom = 4.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(LucernaMetrics.SecondaryGap),
@@ -112,7 +121,7 @@ fun ImportPage(state: LucernaState) {
             }
             Spacer(Modifier.width(8.dp))
             Text(
-                dir.absolutePath,
+                text = dir.absolutePath,
                 fontSize = 10.sp,
                 color = LucernaColors.TextTertiary,
                 maxLines = 1,
@@ -135,7 +144,11 @@ fun ImportPage(state: LucernaState) {
                 )
             }
             Spacer(Modifier.weight(1f))
-            Text("${entries.count { !it.isDirectory }} 个文件", fontSize = 9.5.sp, color = LucernaColors.TextTertiary)
+            Text(
+                text = "${entries.count { !it.isDirectory }} 个文件",
+                fontSize = 9.5.sp,
+                color = LucernaColors.TextTertiary,
+            )
         }
         Spacer(Modifier.height(6.dp))
 
@@ -149,7 +162,7 @@ fun ImportPage(state: LucernaState) {
         ) {
             when {
                 loading -> Text(
-                    "正在读取目录…",
+                    text = "正在读取目录…",
                     fontSize = 11.sp,
                     color = LucernaColors.TextTertiary,
                     modifier = Modifier.align(Alignment.Center),
@@ -159,8 +172,16 @@ fun ImportPage(state: LucernaState) {
                     modifier = Modifier.align(Alignment.Center),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Text("这里没有可导入的图片或视频", fontSize = 11.sp, color = LucernaColors.TextSecondary)
-                    Text("支持 JPG / PNG / WebP / MP4 / MOV / MKV 等常见格式", fontSize = 9.5.sp, color = LucernaColors.TextTertiary)
+                    Text(
+                        text = "这里没有可导入的图片或视频",
+                        fontSize = 11.sp,
+                        color = LucernaColors.TextSecondary,
+                    )
+                    Text(
+                        text = "支持 JPG / PNG / WebP / MP4 / MOV / MKV 等常见格式",
+                        fontSize = 9.5.sp,
+                        color = LucernaColors.TextTertiary,
+                    )
                 }
 
                 else -> LazyColumn(Modifier.fillMaxSize()) {
@@ -175,6 +196,12 @@ fun ImportPage(state: LucernaState) {
                                     selection = if (entry.path in selection) selection - entry.path else selection + entry.path
                                 }
                             },
+                            onPreview = {
+                                entry.type?.let { type ->
+                                    state.previewFile(entry.file, type)
+                                }
+                            },
+                            onReveal = { state.revealFile(entry.path) },
                         )
                     }
                 }
@@ -188,7 +215,11 @@ fun ImportPage(state: LucernaState) {
                         .background(Color(0xCC0A0C12)),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(busy, fontSize = 11.sp, color = LucernaColors.Accent)
+                    Text(
+                        text = busy,
+                        fontSize = 11.sp,
+                        color = LucernaColors.Accent,
+                    )
                 }
             }
         }
@@ -196,7 +227,7 @@ fun ImportPage(state: LucernaState) {
 
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                if (selection.isEmpty()) "点选文件后可多选导入" else "已选 ${selection.size} 项",
+                text = if (selection.isEmpty()) "点选文件后可多选导入" else "已选 ${selection.size} 项",
                 fontSize = 10.sp,
                 color = LucernaColors.TextTertiary,
                 modifier = Modifier.weight(1f),
@@ -217,7 +248,45 @@ fun ImportPage(state: LucernaState) {
 }
 
 @Composable
-private fun BrowserRow(entry: BrowserEntry, selected: Boolean, onClick: () -> Unit) {
+private fun BrowserRow(
+    entry: BrowserEntry,
+    selected: Boolean,
+    onClick: () -> Unit,
+    onPreview: () -> Unit,
+    onReveal: () -> Unit,
+) {
+    if (entry.isDirectory) {
+        BrowserRowContent(
+            entry = entry,
+            selected = selected,
+            onClick = onClick,
+        )
+        return
+    }
+    // 文件行右键：预览 / 在系统文件管理器里定位
+    ContextMenuArea(
+        items = {
+            listOf(
+                ContextMenuItem("预览") { onPreview() },
+                ContextMenuItem("打开文件位置") { onReveal() },
+            )
+        },
+        state = remember(entry.path) { ContextMenuState() },
+    ) {
+        BrowserRowContent(
+            entry = entry,
+            selected = selected,
+            onClick = onClick,
+        )
+    }
+}
+
+@Composable
+private fun BrowserRowContent(
+    entry: BrowserEntry,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -229,13 +298,19 @@ private fun BrowserRow(entry: BrowserEntry, selected: Boolean, onClick: () -> Un
         if (entry.isDirectory) {
             FolderGlyph(Modifier.size(15.dp))
         } else if (entry.type == WallpaperType.VIDEO) {
-            VideoGlyph(Modifier.size(15.dp), color = Color(0xFF9FB7FF))
+            VideoGlyph(
+                modifier = Modifier.size(15.dp),
+                color = Color(0xFF9FB7FF),
+            )
         } else {
-            PhotoGlyph(Modifier.size(15.dp), color = Color(0xFFB9E3C5))
+            PhotoGlyph(
+                modifier = Modifier.size(15.dp),
+                color = Color(0xFFB9E3C5),
+            )
         }
         Spacer(Modifier.width(8.dp))
         Text(
-            entry.name,
+            text = entry.name,
             fontSize = 11.sp,
             color = if (selected) LucernaColors.Accent else LucernaColors.TextPrimary,
             maxLines = 1,
@@ -243,7 +318,11 @@ private fun BrowserRow(entry: BrowserEntry, selected: Boolean, onClick: () -> Un
             modifier = Modifier.weight(1f),
         )
         if (!entry.isDirectory) {
-            Text(FileBrowser.humanSize(entry.size), fontSize = 9.sp, color = LucernaColors.TextTertiary)
+            Text(
+                text = FileBrowser.humanSize(entry.size),
+                fontSize = 9.sp,
+                color = LucernaColors.TextTertiary,
+            )
             Spacer(Modifier.width(9.dp))
             Box(
                 modifier = Modifier
@@ -256,7 +335,11 @@ private fun BrowserRow(entry: BrowserEntry, selected: Boolean, onClick: () -> Un
                 if (selected) CheckGlyph(Modifier.size(9.dp))
             }
         } else {
-            Text("›", fontSize = 14.sp, color = LucernaColors.TextTertiary)
+            Text(
+                text = "›",
+                fontSize = 14.sp,
+                color = LucernaColors.TextTertiary,
+            )
         }
     }
 }

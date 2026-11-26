@@ -23,7 +23,9 @@ import com.lucerna.ui.theme.LucernaColors
  * 萤火虫 logo：琥珀色腹部发光，半透明翅膀，尾部一点光晕。
  */
 @Composable
-fun FireflyLogo(modifier: Modifier = Modifier) {
+fun FireflyLogo(
+    modifier: Modifier = Modifier,
+) {
     Canvas(modifier.size(38.dp)) {
         val w = size.width
         val h = size.height
@@ -105,7 +107,10 @@ fun FireflyLogo(modifier: Modifier = Modifier) {
 
 /** 关闭图标：两条交叉的线。 */
 @Composable
-fun CloseGlyph(modifier: Modifier = Modifier, color: Color = LucernaColors.TextSecondary) {
+fun CloseGlyph(
+    modifier: Modifier = Modifier,
+    color: Color = LucernaColors.TextSecondary,
+) {
     Canvas(modifier.size(14.dp)) {
         val s = size.minDimension
         val pad = s * 0.16f
@@ -117,7 +122,10 @@ fun CloseGlyph(modifier: Modifier = Modifier, color: Color = LucernaColors.TextS
 
 /** 电源键图标：顶部带缺口的圆环加一条竖线。 */
 @Composable
-fun PowerGlyph(modifier: Modifier = Modifier, color: Color = LucernaColors.Danger) {
+fun PowerGlyph(
+    modifier: Modifier = Modifier,
+    color: Color = LucernaColors.Danger,
+) {
     Canvas(modifier.size(15.dp)) {
         val w = size.width
         val stroke = w * 0.12f
@@ -142,7 +150,10 @@ fun PowerGlyph(modifier: Modifier = Modifier, color: Color = LucernaColors.Dange
 
 /** 播放三角。 */
 @Composable
-fun PlayGlyph(modifier: Modifier = Modifier, color: Color = Color.White) {
+fun PlayGlyph(
+    modifier: Modifier = Modifier,
+    color: Color = Color.White,
+) {
     Canvas(modifier.size(12.dp)) {
         val path = Path().apply {
             moveTo(size.width * 0.22f, size.height * 0.12f)
@@ -156,7 +167,10 @@ fun PlayGlyph(modifier: Modifier = Modifier, color: Color = Color.White) {
 
 /** 文件夹图标。 */
 @Composable
-fun FolderGlyph(modifier: Modifier = Modifier, color: Color = LucernaColors.Accent) {
+fun FolderGlyph(
+    modifier: Modifier = Modifier,
+    color: Color = LucernaColors.Accent,
+) {
     Canvas(modifier.size(16.dp)) {
         val w = size.width
         val h = size.height
@@ -175,7 +189,10 @@ fun FolderGlyph(modifier: Modifier = Modifier, color: Color = LucernaColors.Acce
 
 /** 图片图标：山与太阳。 */
 @Composable
-fun PhotoGlyph(modifier: Modifier = Modifier, color: Color = LucernaColors.TextSecondary) {
+fun PhotoGlyph(
+    modifier: Modifier = Modifier,
+    color: Color = LucernaColors.TextSecondary,
+) {
     Canvas(modifier.size(16.dp)) {
         drawRoundRect(
             color = color,
@@ -198,7 +215,10 @@ fun PhotoGlyph(modifier: Modifier = Modifier, color: Color = LucernaColors.TextS
 
 /** 视频图标。 */
 @Composable
-fun VideoGlyph(modifier: Modifier = Modifier, color: Color = LucernaColors.TextSecondary) {
+fun VideoGlyph(
+    modifier: Modifier = Modifier,
+    color: Color = LucernaColors.TextSecondary,
+) {
     Canvas(modifier.size(16.dp)) {
         drawRoundRect(
             color = color,
@@ -220,7 +240,10 @@ fun VideoGlyph(modifier: Modifier = Modifier, color: Color = LucernaColors.TextS
 
 /** 返回上一级。 */
 @Composable
-fun UpGlyph(modifier: Modifier = Modifier, color: Color = LucernaColors.TextSecondary) {
+fun UpGlyph(
+    modifier: Modifier = Modifier,
+    color: Color = LucernaColors.TextSecondary,
+) {
     Canvas(modifier.size(14.dp)) {
         val w = size.width
         drawLine(color, Offset(w * 0.5f, w * 0.82f), Offset(w * 0.5f, w * 0.2f), strokeWidth = w * 0.13f, cap = StrokeCap.Round)
@@ -231,7 +254,10 @@ fun UpGlyph(modifier: Modifier = Modifier, color: Color = LucernaColors.TextSeco
 
 /** 加号。 */
 @Composable
-fun PlusGlyph(modifier: Modifier = Modifier, color: Color = LucernaColors.TextSecondary) {
+fun PlusGlyph(
+    modifier: Modifier = Modifier,
+    color: Color = LucernaColors.TextSecondary,
+) {
     Canvas(modifier.size(12.dp)) {
         val w = size.width
         drawLine(color, Offset(w * 0.5f, w * 0.16f), Offset(w * 0.5f, w * 0.84f), strokeWidth = w * 0.14f, cap = StrokeCap.Round)
@@ -241,7 +267,10 @@ fun PlusGlyph(modifier: Modifier = Modifier, color: Color = LucernaColors.TextSe
 
 /** 减号。 */
 @Composable
-fun MinusGlyph(modifier: Modifier = Modifier, color: Color = LucernaColors.TextSecondary) {
+fun MinusGlyph(
+    modifier: Modifier = Modifier,
+    color: Color = LucernaColors.TextSecondary,
+) {
     Canvas(modifier.size(12.dp)) {
         val w = size.width
         drawLine(color, Offset(w * 0.16f, w * 0.5f), Offset(w * 0.84f, w * 0.5f), strokeWidth = w * 0.14f, cap = StrokeCap.Round)
@@ -250,7 +279,10 @@ fun MinusGlyph(modifier: Modifier = Modifier, color: Color = LucernaColors.TextS
 
 /** 勾选。 */
 @Composable
-fun CheckGlyph(modifier: Modifier = Modifier, color: Color = Color(0xFF1A1408)) {
+fun CheckGlyph(
+    modifier: Modifier = Modifier,
+    color: Color = Color(0xFF1A1408),
+) {
     Canvas(modifier.size(11.dp)) {
         val w = size.width
         val path = Path().apply {
@@ -274,7 +306,10 @@ private val RefreshPath: Path by lazy {
 
 /** 刷新：顺时针的圆形箭头。 */
 @Composable
-fun RefreshGlyph(modifier: Modifier = Modifier, color: Color = LucernaColors.TextSecondary) {
+fun RefreshGlyph(
+    modifier: Modifier = Modifier,
+    color: Color = LucernaColors.TextSecondary,
+) {
     Canvas(modifier.size(13.dp)) {
         val w = size.width
         // 把 24 单位图标里 4..20 的有效区域铺满画布

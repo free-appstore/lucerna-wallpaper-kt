@@ -32,6 +32,7 @@ plugins {
 }
 
 include(":lucerna-core")
+include(":lucerna-db")
 include(":lucerna-media")
 include(":lucerna-ui")
 include(":lucerna-app")

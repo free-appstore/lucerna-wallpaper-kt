@@ -8,6 +8,7 @@ plugins {
 
 dependencies {
     implementation(project(":lucerna-core"))
+    implementation(project(":lucerna-db"))
     implementation(project(":lucerna-media"))
     implementation(project(":lucerna-ui"))
     implementation(libs.bundles.lucerna.app)
@@ -23,6 +24,8 @@ tasks.withType<JavaExec>().configureEach {
         "--add-opens=java.desktop/java.awt=ALL-UNNAMED",
         "--add-opens=java.desktop/sun.lwawt=ALL-UNNAMED",
         "--add-opens=java.desktop/sun.lwawt.macosx=ALL-UNNAMED",
+        // 预览窗口的双指捏合缩放走 JDK 的 eAWT 手势（反射调用）
+        "--add-opens=java.desktop/com.apple.eawt.event=ALL-UNNAMED",
     )
 }
 
@@ -46,6 +49,7 @@ compose.desktop {
             "--add-opens=java.desktop/java.awt=ALL-UNNAMED",
             "--add-opens=java.desktop/sun.lwawt=ALL-UNNAMED",
             "--add-opens=java.desktop/sun.lwawt.macosx=ALL-UNNAMED",
+            "--add-opens=java.desktop/com.apple.eawt.event=ALL-UNNAMED",
         )
 
         nativeDistributions {

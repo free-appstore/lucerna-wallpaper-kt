@@ -11,12 +11,15 @@ import com.lucerna.core.model.LibraryData
 import com.lucerna.core.model.TrayIconStyle
 import com.lucerna.core.model.WallpaperItem
 import com.lucerna.core.model.WallpaperSource
+import com.lucerna.core.model.VideoPlaybackSpeed
 import com.lucerna.core.model.WallpaperType
 import com.lucerna.core.paths.AppPaths
 import com.lucerna.core.store.LibraryStore
 import com.lucerna.core.store.SettingsStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.awt.MouseInfo
+import java.awt.Point
 import java.io.File
 
 /** 面板顶部的四个分页。 */
@@ -35,7 +38,11 @@ enum class MineFilter(val label: String) {
 }
 
 /** 请求打开预览窗口。 */
-data class PreviewRequest(val item: WallpaperItem)
+data class PreviewRequest(
+    val item: WallpaperItem,
+    /** 触发预览时鼠标的屏幕坐标；预览窗口的展开动画以它为原点。 */
+    val anchor: Point? = null,
+)
 
 /**
  * 面板的界面状态。
@@ -107,7 +114,7 @@ class LucernaState(
         persistSettings()
         actions.applyLibrary(item)
         toast = if (item.type == WallpaperType.VIDEO) {
-            "已应用 ${item.name} 的静态封面"
+            "已应用 ${item.name}（动态壁纸）"
         } else {
             "已应用 ${item.name}"
         }
@@ -165,7 +172,31 @@ class LucernaState(
     }
 
     fun openPreview(item: WallpaperItem) {
-        onPreviewRequest(PreviewRequest(item))
+        onPreviewRequest(PreviewRequest(item, pointerLocation()))
+    }
+
+    /** 预览一个还没导入的文件（导入页右键菜单）。 */
+    fun previewFile(file: File, type: WallpaperType) {
+        onPreviewRequest(
+            PreviewRequest(
+                item = WallpaperItem(
+                    id = "import:${file.absolutePath}",
+                    name = file.name,
+                    type = type,
+                    path = file.absolutePath,
+                ),
+                anchor = pointerLocation(),
+            ),
+        )
+    }
+
+    /** 光标在屏幕上的位置；无头环境（测试）返回 null。 */
+    private fun pointerLocation(): Point? =
+        runCatching { MouseInfo.getPointerInfo()?.location?.let { Point(it) } }.getOrNull()
+
+    /** 在系统文件管理器里定位文件。 */
+    fun revealFile(path: String) {
+        actions.openFileLocation(path)
     }
 
     fun openItemLocation(item: WallpaperItem) {
@@ -193,11 +224,19 @@ class LucernaState(
         actions.setAudioEnabled(enabled)
     }
 
+    /** 设置视频壁纸播放速度；0 = 暂停。 */
+    fun setVideoPlaybackSpeed(speed: Float) {
+        val normalized = VideoPlaybackSpeed.normalize(speed)
+        settings = settings.copy(videoSpeed = normalized)
+        persistSettings()
+        actions.setVideoPlaybackSpeed(normalized)
+    }
+
     fun setDisabled(disabled: Boolean) {
         settings = settings.copy(disabled = disabled)
         persistSettings()
         actions.setDisabled(disabled)
-        toast = if (disabled) "已禁用动态壁纸" else "已恢复动态壁纸"
+        toast = if (disabled) "已禁用壁纸" else "已恢复壁纸"
     }
 
     fun setLaunchAtLogin(enabled: Boolean) {

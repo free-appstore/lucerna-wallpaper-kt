@@ -12,6 +12,8 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.percentOffset
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performMouseInput
+import androidx.compose.ui.test.rightClick
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.runComposeUiTest
 import androidx.compose.ui.unit.dp
@@ -25,13 +27,14 @@ import com.lucerna.core.model.TrayIconStyle
 import com.lucerna.core.model.WallpaperItem
 import com.lucerna.core.model.WallpaperType
 import com.lucerna.core.paths.AppPaths
-import com.lucerna.core.store.LibraryStore
-import com.lucerna.core.store.SettingsStore
+import com.lucerna.db.LucernaDb
 import com.lucerna.ui.panel.LucernaPanel
 import com.lucerna.ui.state.LucernaState
+import com.lucerna.ui.state.PreviewRequest
 import com.lucerna.ui.state.MineFilter
 import com.lucerna.ui.state.PanelTab
 import com.lucerna.ui.theme.LucernaTheme
+import java.io.File
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertContains
@@ -46,10 +49,11 @@ class PanelSmokeTest {
         val root = Files.createTempDirectory("lucerna-ui-smoke").toFile()
         val paths = AppPaths.at(root).also { it.ensure() }
         val actions = RecordingActions()
-        val library = LibraryStore(paths)
+        val db = LucernaDb.inMemory()
+        val library = db.libraryStore
         val state = LucernaState(
             paths = paths,
-            settingsStore = SettingsStore(paths),
+            settingsStore = db.settingsStore,
             libraryStore = library,
             actions = actions,
             importer = Importer(paths, library),
@@ -57,7 +61,10 @@ class PanelSmokeTest {
 
         setContent {
             LucernaTheme {
-                LucernaPanel(state, Modifier.size(392.dp, 736.dp))
+                LucernaPanel(
+                    state = state,
+                    modifier = Modifier.size(392.dp, 736.dp),
+                )
             }
         }
 
@@ -96,7 +103,8 @@ class PanelSmokeTest {
         val root = Files.createTempDirectory("lucerna-ui-sections").toFile()
         val paths = AppPaths.at(root).also { it.ensure() }
         val actions = RecordingActions()
-        val library = LibraryStore(paths)
+        val db = LucernaDb.inMemory()
+        val library = db.libraryStore
         library.save(
             LibraryData(
                 listOf(
@@ -108,7 +116,7 @@ class PanelSmokeTest {
         )
         val state = LucernaState(
             paths = paths,
-            settingsStore = SettingsStore(paths),
+            settingsStore = db.settingsStore,
             libraryStore = library,
             actions = actions,
             importer = Importer(paths, library),
@@ -117,7 +125,10 @@ class PanelSmokeTest {
 
         setContent {
             LucernaTheme {
-                LucernaPanel(state, Modifier.size(392.dp, 736.dp))
+                LucernaPanel(
+                    state = state,
+                    modifier = Modifier.size(392.dp, 736.dp),
+                )
             }
         }
 
@@ -150,8 +161,9 @@ class PanelSmokeTest {
         val root = Files.createTempDirectory("lucerna-ui-state").toFile()
         val paths = AppPaths.at(root).also { it.ensure() }
         val actions = RecordingActions()
-        val library = LibraryStore(paths)
-        val settings = SettingsStore(paths)
+        val db = LucernaDb.inMemory()
+        val library = db.libraryStore
+        val settings = db.settingsStore
         val state = LucernaState(paths, settings, library, actions, Importer(paths, library))
 
         val fill = ColorFill(kind = ColorKind.STEPS, steps = 8)
@@ -169,8 +181,9 @@ class PanelSmokeTest {
         val root = Files.createTempDirectory("lucerna-ui-fit").toFile()
         val paths = AppPaths.at(root).also { it.ensure() }
         val actions = RecordingActions()
-        val library = LibraryStore(paths)
-        val state = LucernaState(paths, SettingsStore(paths), library, actions, Importer(paths, library))
+        val db = LucernaDb.inMemory()
+        val library = db.libraryStore
+        val state = LucernaState(paths, db.settingsStore, library, actions, Importer(paths, library))
         state.selectTab(PanelTab.COLOR)
         state.updateColorDraft(
             ColorFill(
@@ -182,7 +195,10 @@ class PanelSmokeTest {
 
         setContent {
             LucernaTheme {
-                LucernaPanel(state, Modifier.size(392.dp, 736.dp))
+                LucernaPanel(
+                    state = state,
+                    modifier = Modifier.size(392.dp, 736.dp),
+                )
             }
         }
 
@@ -201,14 +217,12 @@ class PanelSmokeTest {
         val angleLabel = onNodeWithText("角度").getUnclippedBoundsInRoot()
         assertEquals(angleLabel.top.value, steps.top.value, 0.5f)
 
-        // 左下角刷新按钮：方形，高度与右侧主按钮一致，点一下会重新应用当前色彩
-        val refresh = onNodeWithContentDescription("刷新壁纸").getUnclippedBoundsInRoot()
-        val refreshHeight = (refresh.bottom - refresh.top).value
-        assertEquals(38f, refreshHeight, 0.5f)
-        assertEquals(refreshHeight, (refresh.right - refresh.left).value, 0.5f)
-        assertEquals(button.bottom.value, refresh.bottom.value, 0.5f)
-        onNodeWithContentDescription("刷新壁纸").performClick()
-        assertEquals(1, actions.appliedColors.size)
+        // 左下角刷新按钮：方形，高度与右侧主按钮一致
+        val randomButton = onNodeWithContentDescription("随机配色").getUnclippedBoundsInRoot()
+        val randomHeight = (randomButton.bottom - randomButton.top).value
+        assertEquals(38f, randomHeight, 0.5f)
+        assertEquals(randomHeight, (randomButton.right - randomButton.left).value, 0.5f)
+        assertEquals(button.bottom.value, randomButton.bottom.value, 0.5f)
 
         // 阶数输入框：2–20，且不少于 3 个颜色
         onNodeWithText("5").performTextReplacement("12")
@@ -219,14 +233,25 @@ class PanelSmokeTest {
         assertEquals(12, state.colorDraft.steps)
         onNodeWithText("2").performTextReplacement("3")
         assertEquals(3, state.colorDraft.steps)
+
+        // 随机按钮：只换编辑区里的配色，不直接改壁纸；类型必须保持色阶
+        onNodeWithContentDescription("随机配色").performClick()
+        assertEquals(0, actions.appliedColors.size)
+        assertEquals(ColorKind.STEPS, state.colorDraft.kind)
+        assertTrue(state.colorDraft.colors.size in 2..5)
+
+        // 只有点「添加并应用」才真正换壁纸
+        onNodeWithText("添加并应用").performClick()
+        assertEquals(1, actions.appliedColors.size)
     }
 
     @Test
     fun `阶数可以用上下按钮调节`() = runComposeUiTest {
         val root = Files.createTempDirectory("lucerna-ui-steps").toFile()
         val paths = AppPaths.at(root).also { it.ensure() }
-        val library = LibraryStore(paths)
-        val state = LucernaState(paths, SettingsStore(paths), library, RecordingActions(), Importer(paths, library))
+        val db = LucernaDb.inMemory()
+        val library = db.libraryStore
+        val state = LucernaState(paths, db.settingsStore, library, RecordingActions(), Importer(paths, library))
         state.selectTab(PanelTab.COLOR)
         state.updateColorDraft(
             ColorFill(
@@ -238,7 +263,10 @@ class PanelSmokeTest {
 
         setContent {
             LucernaTheme {
-                LucernaPanel(state, Modifier.size(392.dp, 736.dp))
+                LucernaPanel(
+                    state = state,
+                    modifier = Modifier.size(392.dp, 736.dp),
+                )
             }
         }
 
@@ -257,8 +285,9 @@ class PanelSmokeTest {
     fun `颜色输入支持十六进制和十进制切换`() = runComposeUiTest {
         val root = Files.createTempDirectory("lucerna-ui-hex").toFile()
         val paths = AppPaths.at(root).also { it.ensure() }
-        val library = LibraryStore(paths)
-        val state = LucernaState(paths, SettingsStore(paths), library, RecordingActions(), Importer(paths, library))
+        val db = LucernaDb.inMemory()
+        val library = db.libraryStore
+        val state = LucernaState(paths, db.settingsStore, library, RecordingActions(), Importer(paths, library))
         state.selectTab(PanelTab.COLOR)
         state.updateColorDraft(
             ColorFill(
@@ -270,7 +299,10 @@ class PanelSmokeTest {
 
         setContent {
             LucernaTheme {
-                LucernaPanel(state, Modifier.size(392.dp, 736.dp))
+                LucernaPanel(
+                    state = state,
+                    modifier = Modifier.size(392.dp, 736.dp),
+                )
             }
         }
 
@@ -289,8 +321,9 @@ class PanelSmokeTest {
     fun `拖动分量滑杆只修改当前选中的颜色`() = runComposeUiTest {
         val root = Files.createTempDirectory("lucerna-ui-slider").toFile()
         val paths = AppPaths.at(root).also { it.ensure() }
-        val library = LibraryStore(paths)
-        val state = LucernaState(paths, SettingsStore(paths), library, RecordingActions(), Importer(paths, library))
+        val db = LucernaDb.inMemory()
+        val library = db.libraryStore
+        val state = LucernaState(paths, db.settingsStore, library, RecordingActions(), Importer(paths, library))
         state.selectTab(PanelTab.COLOR)
         val first = Rgb(0.2f, 0.4f, 0.8f)
         val second = Rgb(0.9f, 0.3f, 0.1f)
@@ -298,7 +331,10 @@ class PanelSmokeTest {
 
         setContent {
             LucernaTheme {
-                LucernaPanel(state, Modifier.size(392.dp, 736.dp))
+                LucernaPanel(
+                    state = state,
+                    modifier = Modifier.size(392.dp, 736.dp),
+                )
             }
         }
 
@@ -320,8 +356,9 @@ class PanelSmokeTest {
         val root = Files.createTempDirectory("lucerna-ui-colors").toFile()
         val paths = AppPaths.at(root).also { it.ensure() }
         val actions = RecordingActions()
-        val library = LibraryStore(paths)
-        val settings = SettingsStore(paths)
+        val db = LucernaDb.inMemory()
+        val library = db.libraryStore
+        val settings = db.settingsStore
         val state = LucernaState(paths, settings, library, actions, Importer(paths, library))
 
         val fill = ColorFill(kind = ColorKind.SOLID, colors = listOf(Rgb(0.2f, 0.4f, 0.8f)))
@@ -356,15 +393,19 @@ class PanelSmokeTest {
         val root = Files.createTempDirectory("lucerna-ui-color-grid").toFile()
         val paths = AppPaths.at(root).also { it.ensure() }
         val actions = RecordingActions()
-        val library = LibraryStore(paths)
-        val settings = SettingsStore(paths)
+        val db = LucernaDb.inMemory()
+        val library = db.libraryStore
+        val settings = db.settingsStore
         val state = LucernaState(paths, settings, library, actions, Importer(paths, library))
 
         state.addAndApplyColor(ColorFill(kind = ColorKind.SOLID, colors = listOf(Rgb(0.2f, 0.4f, 0.8f))))
 
         setContent {
             LucernaTheme {
-                LucernaPanel(state, Modifier.size(392.dp, 736.dp))
+                LucernaPanel(
+                    state = state,
+                    modifier = Modifier.size(392.dp, 736.dp),
+                )
             }
         }
 
@@ -379,12 +420,91 @@ class PanelSmokeTest {
         assertEquals(ColorKind.STEPS, state.colorDraft.kind)
         assertEquals(6, state.colorDraft.steps)
     }
+    @Test
+    fun `设置页可以调整视频播放速度`() = runComposeUiTest {
+        val root = Files.createTempDirectory("lucerna-ui-video-speed").toFile()
+        val paths = AppPaths.at(root).also { it.ensure() }
+        val actions = RecordingActions()
+        val db = LucernaDb.inMemory()
+        val library = db.libraryStore
+        val state = LucernaState(
+            paths = paths,
+            settingsStore = db.settingsStore,
+            libraryStore = library,
+            actions = actions,
+            importer = Importer(paths, library),
+        )
+        state.selectTab(PanelTab.SETTINGS)
+
+        setContent {
+            LucernaTheme {
+                LucernaPanel(
+                    state = state,
+                    modifier = Modifier.size(392.dp, 736.dp),
+                )
+            }
+        }
+
+        onNodeWithText("播放速度").assertExists()
+        onNodeWithContentDescription("视频播放速度").performTouchInput {
+            click(percentOffset(0.75f, 0.5f))
+        }
+
+        assertEquals(2f, state.settings.videoSpeed)
+        assertEquals(listOf(2f), actions.videoSpeeds)
+    }
+
+    @Test
+    fun `导入页文件右键可以预览和在系统中定位`() = runComposeUiTest {
+        val root = Files.createTempDirectory("lucerna-ui-import-menu").toFile()
+        val paths = AppPaths.at(root).also { it.ensure() }
+        val actions = RecordingActions()
+        val db = LucernaDb.inMemory()
+        val library = db.libraryStore
+        var previewed: PreviewRequest? = null
+        val state = LucernaState(
+            paths = paths,
+            settingsStore = db.settingsStore,
+            libraryStore = library,
+            actions = actions,
+            importer = Importer(paths, library),
+            onPreviewRequest = { previewed = it },
+        )
+        val browseDir = Files.createTempDirectory("lucerna-ui-import-files").toFile()
+        val photo = File(browseDir, "photo.png").apply { writeText("x") }
+        state.rememberImportDir(browseDir)
+        state.selectTab(PanelTab.IMPORT)
+
+        setContent {
+            LucernaTheme {
+                LucernaPanel(
+                    state = state,
+                    modifier = Modifier.size(392.dp, 736.dp),
+                )
+            }
+        }
+
+        // 文件夹没有右键菜单，文件才有
+        onNodeWithText("photo.png").performMouseInput { rightClick() }
+        onNodeWithText("预览").assertExists()
+        onNodeWithText("打开文件位置").assertExists()
+
+        onNodeWithText("预览").performClick()
+        assertEquals(photo.absolutePath, previewed?.item?.path)
+        assertEquals(WallpaperType.IMAGE, previewed?.item?.type)
+
+        onNodeWithText("photo.png").performMouseInput { rightClick() }
+        onNodeWithText("打开文件位置").performClick()
+        assertEquals(listOf(photo.absolutePath), actions.revealedPaths)
+    }
 }
 
 private class RecordingActions : WallpaperActions {
     val appliedItems = mutableListOf<WallpaperItem>()
     val appliedColors = mutableListOf<ColorFill>()
     val trayIconStyles = mutableListOf<TrayIconStyle>()
+    val revealedPaths = mutableListOf<String>()
+    val videoSpeeds = mutableListOf<Float>()
 
     override fun applyLibrary(item: WallpaperItem) {
         appliedItems += item
@@ -396,6 +516,11 @@ private class RecordingActions : WallpaperActions {
 
     override fun setVolume(volume: Float) = Unit
     override fun setAudioEnabled(enabled: Boolean) = Unit
+
+    override fun setVideoPlaybackSpeed(speed: Float) {
+        videoSpeeds += speed
+    }
+
     override fun setDisabled(disabled: Boolean) = Unit
     override fun setLaunchAtLogin(enabled: Boolean) = Unit
     override fun setScreensaverWallpaper(enabled: Boolean) = Unit
@@ -405,7 +530,9 @@ private class RecordingActions : WallpaperActions {
     }
     override fun openWallpaperSettings() = Unit
     override fun testScreensaver() = Unit
-    override fun openFileLocation(path: String) = Unit
+    override fun openFileLocation(path: String) {
+        revealedPaths += path
+    }
     override fun openDirectory(path: String) = Unit
     override fun quit() = Unit
 }

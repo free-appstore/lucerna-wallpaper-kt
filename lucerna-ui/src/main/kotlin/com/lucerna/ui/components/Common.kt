@@ -122,7 +122,7 @@ fun PrimaryButton(
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            text,
+            text = text,
             style = LucernaText.button,
             color = if (enabled) Color(0xFF1A1408) else LucernaColors.TextTertiary,
         )
@@ -146,7 +146,11 @@ fun GhostButton(
             .padding(horizontal = 12.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text, fontSize = 11.5.sp, color = if (enabled) LucernaColors.TextSecondary else LucernaColors.TextTertiary)
+        Text(
+            text = text,
+            fontSize = 11.5.sp,
+            color = if (enabled) LucernaColors.TextSecondary else LucernaColors.TextTertiary,
+        )
     }
 }
 
@@ -164,9 +168,18 @@ fun ToggleRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(title, fontSize = 12.sp, color = LucernaColors.TextPrimary)
+            Text(
+                text = title,
+                fontSize = 12.sp,
+                color = LucernaColors.TextPrimary,
+            )
             if (!subtitle.isNullOrBlank()) {
-                Text(subtitle, fontSize = 10.sp, color = LucernaColors.TextTertiary, modifier = Modifier.padding(top = 2.dp))
+                Text(
+                    text = subtitle,
+                    fontSize = 10.sp,
+                    color = LucernaColors.TextTertiary,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
             }
         }
         Switch(
@@ -187,9 +200,11 @@ fun ToggleRow(
 
 /** 分隔线。 */
 @Composable
-fun ThinDivider(modifier: Modifier = Modifier) {
+fun ThinDivider(
+    modifier: Modifier = Modifier,
+) {
     Box(
-        modifier
+        modifier = modifier
             .fillMaxWidth()
             .height(1.dp)
             .background(Color(0x10FFFFFF)),
@@ -198,13 +213,26 @@ fun ThinDivider(modifier: Modifier = Modifier) {
 
 /** 空状态提示。 */
 @Composable
-fun EmptyHint(title: String, detail: String, modifier: Modifier = Modifier) {
+fun EmptyHint(
+    title: String,
+    detail: String,
+    modifier: Modifier = Modifier,
+) {
     Column(
         modifier = modifier.fillMaxWidth().padding(vertical = 28.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text(title, fontSize = 12.5.sp, color = LucernaColors.TextSecondary)
-        Text(detail, fontSize = 10.5.sp, color = LucernaColors.TextTertiary, modifier = Modifier.padding(top = 6.dp))
+        Text(
+            text = title,
+            fontSize = 12.5.sp,
+            color = LucernaColors.TextSecondary,
+        )
+        Text(
+            text = detail,
+            fontSize = 10.5.sp,
+            color = LucernaColors.TextTertiary,
+            modifier = Modifier.padding(top = 6.dp),
+        )
     }
 }

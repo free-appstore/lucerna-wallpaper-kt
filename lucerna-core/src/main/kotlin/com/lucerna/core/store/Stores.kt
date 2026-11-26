@@ -3,66 +3,28 @@ package com.lucerna.core.store
 import com.lucerna.core.model.LibraryData
 import com.lucerna.core.model.Settings
 import com.lucerna.core.model.WallpaperItem
-import com.lucerna.core.paths.AppPaths
-import java.nio.file.Files
-import java.nio.file.Path
-import java.nio.file.StandardCopyOption
 
-/** 读取 / 写入 settings.json。 */
-class SettingsStore(private val paths: AppPaths) {
+/**
+ * 设置存储。
+ *
+ * 具体实现（Room）在 `lucerna-db` 模块里；core 只定义接口，避免反向依赖。
+ * 现有实现是同步的，调用方在界面线程上读写小数据，和以前直接读写 JSON 一致。
+ */
+interface SettingsStore {
 
-    fun load(): Settings {
-        val bytes = runCatching { Files.readAllBytes(paths.settingsFile) }.getOrNull() ?: return Settings()
-        return runCatching { lucernaJson.decodeFromString<Settings>(bytes.decodeToString()) }
-            .map { it.normalized() }
-            .getOrElse { Settings() }
-    }
+    fun load(): Settings
 
-    fun save(settings: Settings) {
-        paths.ensure()
-        writeAtomically(paths.settingsFile, lucernaJson.encodeToString(Settings.serializer(), settings.normalized()).toByteArray())
-    }
+    fun save(settings: Settings)
 }
 
-/** 读取 / 写入 library.json，图库条目按加入时间倒序保存。 */
-class LibraryStore(private val paths: AppPaths) {
+/** 图库元数据存储；图片/视频文件本身仍由 [com.lucerna.core.paths.AppPaths] 管理。 */
+interface LibraryStore {
 
-    fun load(): LibraryData {
-        val bytes = runCatching { Files.readAllBytes(paths.libraryFile) }.getOrNull() ?: return LibraryData()
-        return runCatching { lucernaJson.decodeFromString<LibraryData>(bytes.decodeToString()) }
-            .getOrElse { LibraryData() }
-    }
+    fun load(): LibraryData
 
-    fun save(data: LibraryData) {
-        paths.ensure()
-        val sorted = data.items.sortedByDescending { it.addedAt }
-        writeAtomically(paths.libraryFile, lucernaJson.encodeToString(LibraryData.serializer(), LibraryData(sorted)).toByteArray())
-    }
+    fun save(data: LibraryData)
 
-    fun add(items: List<WallpaperItem>): LibraryData {
-        if (items.isEmpty()) return load()
-        val data = load()
-        val merged = (items + data.items).distinctBy { it.id }
-        save(LibraryData(merged))
-        return LibraryData(merged)
-    }
+    fun add(items: List<WallpaperItem>): LibraryData
 
-    fun remove(id: String): LibraryData {
-        val data = load()
-        val next = data.items.filterNot { it.id == id }
-        save(LibraryData(next))
-        return LibraryData(next)
-    }
-}
-
-/** 先写临时文件再原子替换，避免半截 JSON。 */
-internal fun writeAtomically(target: Path, bytes: ByteArray) {
-    Files.createDirectories(target.parent)
-    val temp = target.resolveSibling(target.fileName.toString() + ".tmp")
-    Files.write(temp, bytes)
-    runCatching {
-        Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
-    }.onFailure {
-        Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING)
-    }
+    fun remove(id: String): LibraryData
 }

@@ -9,8 +9,9 @@ import java.nio.file.Paths
  * Lucerna 的数据目录布局：
  *
  * ```
- * <root>/settings.json
- * <root>/library.json
+ * <root>/lucerna.db    Room 数据库（设置 / 色彩 / 图库元数据）
+ * <root>/settings.json 旧版设置文件，仅用于首次迁移
+ * <root>/library.json  旧版图库文件，仅用于首次迁移
  * <root>/media/        导入后的原文件副本
  * <root>/thumbnails/   图片缩略图
  * <root>/renders/      色彩壁纸渲染出的 PNG
@@ -18,6 +19,7 @@ import java.nio.file.Paths
  */
 class AppPaths(val root: Path) {
 
+    val databaseFile: Path = root.resolve("lucerna.db")
     val settingsFile: Path = root.resolve("settings.json")
     val libraryFile: Path = root.resolve("library.json")
     val mediaDir: Path = root.resolve("media")

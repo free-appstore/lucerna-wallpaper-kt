@@ -10,6 +10,7 @@ dependencies {
     implementation(libs.bundles.lucerna.ui)
     implementation(compose.desktop.currentOs)
 
+    testImplementation(project(":lucerna-db"))
     testImplementation(libs.bundles.lucerna.test)
     testImplementation(libs.bundles.lucerna.ui.test)
     testImplementation(compose.desktop.currentOs)

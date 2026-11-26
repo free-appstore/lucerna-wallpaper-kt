@@ -4,6 +4,8 @@ plugins {
     alias(libs.plugins.compose.compiler) apply false
     alias(libs.plugins.kotlin.jvm) apply false
     alias(libs.plugins.kotlin.serialization) apply false
+    alias(libs.plugins.ksp) apply false
+    alias(libs.plugins.room3) apply false
 }
 
 // 所有桌面模块共用同一份 JVM 目标，避免各模块编译级别不一致

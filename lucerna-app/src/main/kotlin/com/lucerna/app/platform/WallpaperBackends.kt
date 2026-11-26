@@ -25,13 +25,16 @@ object PlatformWallpapers {
 }
 
 /**
- * macOS：壁纸同时铺两处 ——
+ * macOS：图片 / 色彩同时铺两处 ——
  * 1. **桌面壁纸层**（见 [MacWallpaperLayer]）：自己画在桌面层级的窗口里，换壁纸 = 换图，
  *    所有屏幕立刻生效、零灰屏；压在系统壁纸之上、桌面图标/程序/台前调度/程序坞之下，
  *    鼠标点击全部穿透给系统，并且出现在所有 Space 里。
  * 2. **系统壁纸**：同样设成这张图（当前 Space 用 NSWorkspace；壁纸库里每个 Space / 每块屏幕
  *    的配置也一起写，这一步会重启 WallpaperAgent，但灰屏被壁纸层盖住看不到）。
  *    Mission Control、切换桌面、全屏 Space 的快照都取系统壁纸，所以这一份必须也一致。
+ *
+ * 视频例外：桌面层播放用户视频；系统 Desktop 壁纸同步成同一视频封面，供 Space /
+ * 调度中心过渡动画垫底。只写 Desktop，不动 Idle（锁屏）配置，系统动态壁纸/视频壁纸仍可在锁屏播放。
  *
  * 万一系统不认这个窗口层级（拿不到 NSWindow 或被系统策略挡住），退化为只用系统壁纸。
  */
@@ -68,6 +71,52 @@ class MacWallpaperBackend : WallpaperBackend {
     val layerImagePath: String? get() = layer.imagePath
 
     val layerWindowCount: Int get() = layer.windowCount
+
+    override fun applyVideo(
+        videoPath: String,
+        posterPath: String,
+        volume: Float,
+        muted: Boolean,
+        speed: Float,
+        paused: Boolean,
+        isStale: () -> Boolean,
+    ): Boolean {
+        // 桌面用 App 窗口播放；系统 Desktop 同步成视频封面，作为 Space/调度中心
+        // 过渡动画的垫底；只写 Desktop，Idle（锁屏）仍由系统壁纸管理。
+        val layerOk = layer.applyVideo(
+            videoPath = videoPath,
+            posterPath = posterPath,
+            playback = VideoWallpaperPlayback(
+                volume = volume,
+                muted = muted,
+                speed = speed,
+                enabled = !paused,
+            ),
+            isStale = isStale,
+        )
+        if (layerOk) {
+            // 桌面层正在播放；系统“桌面”这一份用封面垫底，让 Space / 调度中心过渡动画的
+            // 第一帧至少是同一视频的画面，而不是旧系统壁纸。只写 Desktop 配置，
+            // Idle（锁屏）保持用户自己的系统壁纸不动。
+            if (!isStale()) requestCurrentSpace(posterPath)
+            return true
+        }
+
+        // 桌面层不可用：退回静态封面，至少保证桌面能看见壁纸
+        if (isStale()) return true
+        return applyImage(posterPath)
+    }
+
+    override fun updateVideoPlayback(volume: Float, muted: Boolean, speed: Float, paused: Boolean) {
+        layer.updatePlayback(
+            VideoWallpaperPlayback(
+                volume = volume,
+                muted = muted,
+                speed = speed,
+                enabled = !paused,
+            ),
+        )
+    }
 
     override fun applyImage(path: String): Boolean = applyImage(path) { false }
 

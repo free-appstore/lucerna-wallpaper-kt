@@ -161,12 +161,21 @@ internal object MacFullscreenDetector {
         }
     }
 
+    /** 本进程的一个窗口：边界、层级、是否真的在屏幕上。 */
+    data class OwnWindow(
+        val bounds: Rectangle,
+        val level: Int,
+        val onScreen: Boolean,
+    )
+
     /**
-     * 本进程所有窗口的 (bounds, 层级)，冒烟测试用来确认桌面壁纸层的窗口真的压在
-     * 系统壁纸之上、桌面图标之下。
+     * 本进程所有窗口的 (bounds, 层级, 是否在屏)，冒烟测试用来确认桌面壁纸层的窗口真的压在
+     * 系统壁纸之上、桌面图标之下，并且切换 Space 后没有变成「isVisible=true 但不在屏」。
      */
-    fun ownWindows(): List<Pair<Rectangle, Int>> = runCatching {
-        windowList(listOptions = 0).mapNotNull { window ->
+    fun ownWindows(): List<OwnWindow> = runCatching {
+        // 只列当前真正在屏的窗口。optionAll 会把已经隐藏、但还留在窗口列表里的
+        // 桌面层窗口也算进来，冒烟测试就发现不了「系统壁纸穿出来」。
+        windowList(listOptions = 1).mapNotNull { window ->
             val pid = (window.objectForKey("kCGWindowOwnerPID") as? NSNumber)?.longValue()
                 ?: return@mapNotNull null
             if (pid != ownPid) return@mapNotNull null
@@ -174,7 +183,8 @@ internal object MacFullscreenDetector {
                 ?: return@mapNotNull null
             val bounds = (window.objectForKey("kCGWindowBounds") as? NSDictionary)?.toRectangle()
                 ?: return@mapNotNull null
-            bounds to layer
+            val onScreen = (window.objectForKey("kCGWindowIsOnscreen") as? NSNumber)?.intValue() == 1
+            OwnWindow(bounds, layer, onScreen)
         }
     }.getOrElse { emptyList() }
 

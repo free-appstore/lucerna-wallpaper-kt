@@ -1,17 +1,23 @@
 package com.lucerna.app
 
 import com.lucerna.core.platform.DesktopOs
+import com.lucerna.ui.preview.PREVIEW_CHROME_HEIGHT
+import java.awt.Dimension
 import java.awt.GraphicsConfiguration
 import java.awt.GraphicsEnvironment
 import java.awt.MouseInfo
 import java.awt.Point
 import java.awt.Rectangle
 import java.awt.Toolkit
+import kotlin.math.roundToInt
 
 /** 计算面板与预览窗口的位置。 */
 object PanelPlacement {
 
     private const val EDGE = 8
+
+    /** 拿不到媒体尺寸时（例如尚未加载的视频）先按 16:9 占位。 */
+    private const val DEFAULT_PREVIEW_ASPECT = 16f / 9f
 
     /** 面板贴在状态栏 / 任务栏下方，水平方向以鼠标位置（即托盘图标）为中心。 */
     fun panelBounds(width: Int, height: Int): Rectangle {
@@ -35,12 +41,48 @@ object PanelPlacement {
         return Rectangle(x, y, width, height)
     }
 
-    /** 预览窗口居中显示在鼠标所在的屏幕。 */
-    fun centeredBounds(width: Int, height: Int): Rectangle {
+    /**
+     * 预览窗口：居中显示在当前（鼠标所在）屏幕，高度为屏幕的一半，
+     * 中间的画面区域按媒体宽高比自适应。
+     */
+    fun previewBounds(mediaWidth: Int, mediaHeight: Int): Rectangle {
         val screen = pointerScreenConfig(pointerLocation()).bounds
-        val x = screen.x + (screen.width - width) / 2
-        val y = screen.y + (screen.height - height) / 2
-        return Rectangle(x, y, width, height)
+        val size = previewWindowSize(screen.width, screen.height, mediaWidth, mediaHeight)
+        return Rectangle(
+            screen.x + (screen.width - size.width) / 2,
+            screen.y + (screen.height - size.height) / 2,
+            size.width,
+            size.height,
+        )
+    }
+
+    /**
+     * 预览窗口在 [screenWidth] × [screenHeight] 屏幕上的尺寸。
+     *
+     * 窗口高度取屏幕的一半；扣掉标题栏与底栏后，画面区域高度 × 媒体宽高比 = 窗口宽度。
+     * 超宽媒体按屏幕可用宽度收窄，同时把高度按同一比例收回，保证画面区域仍是媒体比例。
+     */
+    fun previewWindowSize(
+        screenWidth: Int,
+        screenHeight: Int,
+        mediaWidth: Int,
+        mediaHeight: Int,
+    ): Dimension {
+        val aspect = if (mediaWidth > 0 && mediaHeight > 0) {
+            mediaWidth.toFloat() / mediaHeight
+        } else {
+            DEFAULT_PREVIEW_ASPECT
+        }
+        val windowHeight = (screenHeight / 2).coerceAtLeast(PREVIEW_CHROME_HEIGHT + 1)
+        val contentHeight = windowHeight - PREVIEW_CHROME_HEIGHT
+        val maxContentWidth = (screenWidth - 2 * EDGE).coerceAtLeast(1)
+        val contentWidth = (contentHeight * aspect).roundToInt().coerceAtLeast(1)
+        return if (contentWidth <= maxContentWidth) {
+            Dimension(contentWidth, windowHeight)
+        } else {
+            val height = (maxContentWidth / aspect).roundToInt().coerceAtLeast(1)
+            Dimension(maxContentWidth, height + PREVIEW_CHROME_HEIGHT)
+        }
     }
 
     private fun pointerLocation(): Point? = runCatching { MouseInfo.getPointerInfo()?.location }.getOrNull()

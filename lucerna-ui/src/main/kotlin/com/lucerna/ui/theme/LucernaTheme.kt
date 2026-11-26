@@ -1,9 +1,11 @@
 package com.lucerna.ui.theme
 
+import androidx.compose.foundation.LocalContextMenuRepresentation
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
@@ -29,6 +31,9 @@ object LucernaColors {
     val Danger = Color(0xFFFF7A7A)
     val Track = Color(0x26FFFFFF)
 
+    /** 右键菜单的底色：比面板更深一档，弹出时能和背后的卡片区分开。 */
+    val MenuSurface = Color(0xF7151822)
+
     val panelBrush = Brush.verticalGradient(listOf(PanelTop, PanelBottom))
 }
 
@@ -53,23 +58,30 @@ object LucernaMetrics {
 }
 
 @Composable
-fun LucernaTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = darkColorScheme(
-            primary = LucernaColors.Accent,
-            onPrimary = Color(0xFF1A1408),
-            secondary = LucernaColors.AccentDeep,
-            background = LucernaColors.PanelBottom,
-            surface = LucernaColors.PanelTop,
-            onSurface = LucernaColors.TextPrimary,
-            onSurfaceVariant = LucernaColors.TextSecondary,
-            error = LucernaColors.Danger,
-        ),
-        typography = Typography(
-            bodyLarge = TextStyle(fontFamily = FontFamily.Default, fontSize = 13.sp),
-            bodyMedium = TextStyle(fontFamily = FontFamily.Default, fontSize = 12.sp),
-            labelLarge = TextStyle(fontFamily = FontFamily.Default, fontSize = 12.sp, fontWeight = FontWeight.Medium),
-        ),
-        content = content,
-    )
+fun LucernaTheme(
+    content: @Composable () -> Unit,
+) {
+    // 右键菜单的默认实现是白底黑字，这里统一换成深色圆角版本
+    CompositionLocalProvider(
+        LocalContextMenuRepresentation provides LucernaContextMenuRepresentation,
+    ) {
+        MaterialTheme(
+            colorScheme = darkColorScheme(
+                primary = LucernaColors.Accent,
+                onPrimary = Color(0xFF1A1408),
+                secondary = LucernaColors.AccentDeep,
+                background = LucernaColors.PanelBottom,
+                surface = LucernaColors.PanelTop,
+                onSurface = LucernaColors.TextPrimary,
+                onSurfaceVariant = LucernaColors.TextSecondary,
+                error = LucernaColors.Danger,
+            ),
+            typography = Typography(
+                bodyLarge = TextStyle(fontFamily = FontFamily.Default, fontSize = 13.sp),
+                bodyMedium = TextStyle(fontFamily = FontFamily.Default, fontSize = 12.sp),
+                labelLarge = TextStyle(fontFamily = FontFamily.Default, fontSize = 12.sp, fontWeight = FontWeight.Medium),
+            ),
+            content = content,
+        )
+    }
 }

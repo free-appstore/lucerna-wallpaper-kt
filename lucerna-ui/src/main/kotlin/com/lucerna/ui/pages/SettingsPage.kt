@@ -1,6 +1,8 @@
 package com.lucerna.ui.pages
 
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -32,10 +34,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lucerna.core.model.TrayIconStyle
+import com.lucerna.core.model.VideoPlaybackSpeed
 import com.lucerna.core.util.MemoryStats
 import com.lucerna.ui.components.GlassCard
 import com.lucerna.ui.components.GhostButton
@@ -50,7 +55,9 @@ private val TRAY_ICON_OPTIONS = listOf(TrayIconStyle.COLOR, TrayIconStyle.MONO)
 
 /** 「设置」页：声音、禁用、登录启动、屏保与存储位置。 */
 @Composable
-fun SettingsPage(state: LucernaState) {
+fun SettingsPage(
+    state: LucernaState,
+) {
     val settings = state.settings
     Column(
         modifier = Modifier
@@ -60,9 +67,13 @@ fun SettingsPage(state: LucernaState) {
     ) {
         SectionLabel("外观")
         GlassCard(Modifier.fillMaxWidth()) {
-            Text("菜单栏图标", fontSize = 12.sp, color = LucernaColors.TextPrimary)
             Text(
-                "彩色是萤火虫本来的配色，单色是纯白剪影；左右滑动切换",
+                text = "菜单栏图标",
+                fontSize = 12.sp,
+                color = LucernaColors.TextPrimary,
+            )
+            Text(
+                text = "彩色是萤火虫本来的配色，单色会跟随系统菜单栏自动切换黑 / 白；左右滑动切换",
                 fontSize = 10.sp,
                 color = LucernaColors.TextTertiary,
                 modifier = Modifier.padding(top = 2.dp),
@@ -85,7 +96,11 @@ fun SettingsPage(state: LucernaState) {
                 onCheckedChange = state::setAudioEnabled,
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("音量", fontSize = 10.5.sp, color = LucernaColors.TextTertiary)
+                Text(
+                    text = "音量",
+                    fontSize = 10.5.sp,
+                    color = LucernaColors.TextTertiary,
+                )
                 Slider(
                     value = settings.volume,
                     onValueChange = state::setVolume,
@@ -99,15 +114,41 @@ fun SettingsPage(state: LucernaState) {
                     modifier = Modifier.weight(1f).padding(horizontal = 10.dp),
                 )
                 Text(
-                    "${(settings.volume * 100).roundToInt()}%",
+                    text = "${(settings.volume * 100).roundToInt()}%",
                     fontSize = 10.sp,
                     color = if (settings.audioEnabled) LucernaColors.TextSecondary else LucernaColors.TextTertiary,
                 )
             }
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "播放速度",
+                    fontSize = 10.5.sp,
+                    color = LucernaColors.TextTertiary,
+                )
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = VideoPlaybackSpeed.fromSpeed(settings.videoSpeed).label,
+                    fontSize = 10.sp,
+                    color = LucernaColors.Accent,
+                )
+            }
+            Spacer(Modifier.height(4.dp))
+            VideoSpeedSlider(
+                selected = VideoPlaybackSpeed.fromSpeed(settings.videoSpeed),
+                onSelect = { state.setVideoPlaybackSpeed(it.speed) },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Text(
+                text = "仅调节桌面视频；锁屏使用系统壁纸",
+                fontSize = 9.sp,
+                color = LucernaColors.TextTertiary,
+                modifier = Modifier.padding(top = 4.dp),
+            )
             ThinDivider(Modifier.padding(vertical = 4.dp))
             ToggleRow(
                 title = "禁用壁纸",
-                subtitle = "暂停动态壁纸并隐藏视频窗口，省电或临时让出性能",
+                subtitle = "暂停视频壁纸播放，省电或临时让出性能",
                 checked = settings.disabled,
                 onCheckedChange = state::setDisabled,
             )
@@ -134,12 +175,15 @@ fun SettingsPage(state: LucernaState) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    "本机屏保设置为 1 分钟且无需密码",
+                    text = "本机屏保设置为 1 分钟且无需密码",
                     fontSize = 9.5.sp,
                     color = LucernaColors.TextTertiary,
                     modifier = Modifier.weight(1f),
                 )
-                GhostButton("立即测试", onClick = state::testScreensaver)
+                GhostButton(
+                    text = "立即测试",
+                    onClick = state::testScreensaver,
+                )
             }
         }
 
@@ -157,12 +201,15 @@ fun SettingsPage(state: LucernaState) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    "全屏 app 覆盖的屏幕也能立即更新，无需重启壁纸服务",
+                    text = "全屏 app 覆盖的屏幕也能立即更新，无需重启壁纸服务",
                     fontSize = 9.5.sp,
                     color = LucernaColors.TextTertiary,
                     modifier = Modifier.weight(1f),
                 )
-                GhostButton("打开系统墙纸设置", onClick = state::openWallpaperSettings)
+                GhostButton(
+                    text = "打开系统墙纸设置",
+                    onClick = state::openWallpaperSettings,
+                )
             }
         }
 
@@ -193,11 +240,19 @@ fun SettingsPage(state: LucernaState) {
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Column {
-                Text("Lucerna 1.0.0", fontSize = 10.5.sp, color = LucernaColors.TextSecondary)
-                Text("灵萤 · 桌面壁纸", fontSize = 9.5.sp, color = LucernaColors.TextTertiary)
+                Text(
+                    text = "Lucerna 1.0.0",
+                    fontSize = 10.5.sp,
+                    color = LucernaColors.TextSecondary,
+                )
+                Text(
+                    text = "灵萤 · 桌面壁纸",
+                    fontSize = 9.5.sp,
+                    color = LucernaColors.TextTertiary,
+                )
             }
             Text(
-                "内存 ${MemoryStats.usedMegabytes()} MB",
+                text = "内存 ${MemoryStats.usedMegabytes()} MB",
                 fontSize = 9.5.sp,
                 color = LucernaColors.TextTertiary,
             )
@@ -236,7 +291,7 @@ private fun IconStyleSlider(
         }
 
         Box(
-            Modifier
+            modifier = Modifier
                 .offset(x = thumbOffset)
                 .width(segment)
                 .fillMaxHeight()
@@ -245,7 +300,7 @@ private fun IconStyleSlider(
                 .background(LucernaColors.AccentSoft),
         )
         Box(
-            Modifier
+            modifier = Modifier
                 .fillMaxSize()
                 .pointerInput(widthPx) { detectTapGestures { pick(it.x) } }
                 .pointerInput(widthPx) {
@@ -262,7 +317,7 @@ private fun IconStyleSlider(
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            option.label,
+                            text = option.label,
                             fontSize = 11.sp,
                             fontWeight = if (optionIndex == index) FontWeight.SemiBold else FontWeight.Normal,
                             color = if (optionIndex == index) LucernaColors.TextPrimary else LucernaColors.TextTertiary,
@@ -274,10 +329,86 @@ private fun IconStyleSlider(
     }
 }
 
+/**
+ * 视频壁纸播放速度：暂停 / x0.5 / x1 / x1.5 / x2 / x3。
+ *
+ * 选中段用一颗跟着滑动的胶囊高亮，点按或左右拖动都能切换。
+ */
 @Composable
-private fun SectionLabel(text: String) {
+private fun VideoSpeedSlider(
+    selected: VideoPlaybackSpeed,
+    onSelect: (VideoPlaybackSpeed) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val options = VideoPlaybackSpeed.entries
+    val index = options.indexOf(selected).coerceAtLeast(0)
+    val density = LocalDensity.current
+    BoxWithConstraints(
+        modifier = modifier
+            .height(LucernaMetrics.SecondaryHeight)
+            .clip(RoundedCornerShape(LucernaMetrics.SecondaryRadius))
+            .background(Color(0x12FFFFFF))
+            .border(1.dp, LucernaColors.Border, RoundedCornerShape(LucernaMetrics.SecondaryRadius))
+            .semantics { contentDescription = "视频播放速度" },
+    ) {
+        val widthPx = with(density) { maxWidth.toPx() }
+        val segment = maxWidth / options.size
+        val thumbOffset by animateDpAsState(
+            targetValue = segment * index,
+            animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+            label = "videoSpeed",
+        )
+
+        fun pick(x: Float) {
+            val ratio = (x / widthPx).coerceIn(0f, 0.999f)
+            onSelect(options[(ratio * options.size).toInt()])
+        }
+
+        Box(
+            modifier = Modifier
+                .offset(x = thumbOffset)
+                .width(segment)
+                .fillMaxHeight()
+                .padding(2.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(LucernaColors.AccentSoft),
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(widthPx) { detectTapGestures { pick(it.x) } }
+                .pointerInput(widthPx) {
+                    detectHorizontalDragGestures { change, _ ->
+                        pick(change.position.x)
+                        change.consume()
+                    }
+                },
+        ) {
+            Row(Modifier.fillMaxSize()) {
+                options.forEachIndexed { optionIndex, option ->
+                    Box(
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = option.label,
+                            fontSize = 9.5.sp,
+                            fontWeight = if (optionIndex == index) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (optionIndex == index) LucernaColors.Accent else LucernaColors.TextTertiary,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionLabel(
+    text: String,
+) {
     Text(
-        text,
+        text = text,
         fontSize = 10.5.sp,
         fontWeight = FontWeight.Medium,
         color = LucernaColors.TextTertiary,
@@ -286,18 +417,29 @@ private fun SectionLabel(text: String) {
 }
 
 @Composable
-private fun StorageRow(title: String, path: String, onOpen: () -> Unit) {
+private fun StorageRow(
+    title: String,
+    path: String,
+    onOpen: () -> Unit,
+) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text(title, fontSize = 11.sp, color = LucernaColors.TextPrimary)
             Text(
-                path,
+                text = title,
+                fontSize = 11.sp,
+                color = LucernaColors.TextPrimary,
+            )
+            Text(
+                text = path,
                 fontSize = 9.sp,
                 color = LucernaColors.TextTertiary,
                 maxLines = 1,
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
             )
         }
-        GhostButton("打开", onClick = onOpen)
+        GhostButton(
+            text = "打开",
+            onClick = onOpen,
+        )
     }
 }

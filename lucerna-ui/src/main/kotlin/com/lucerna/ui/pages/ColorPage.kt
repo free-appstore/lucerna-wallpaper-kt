@@ -56,6 +56,7 @@ import androidx.compose.ui.unit.sp
 import com.lucerna.core.model.ColorFill
 import com.lucerna.core.model.ColorKind
 import com.lucerna.core.model.Rgb
+import com.lucerna.core.model.randomized
 import com.lucerna.core.render.ColorRenderer
 import com.lucerna.ui.components.*
 import com.lucerna.ui.state.LucernaState
@@ -64,6 +65,7 @@ import com.lucerna.ui.theme.LucernaMetrics
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.*
+import kotlin.time.Duration.Companion.milliseconds
 
 /** 颜色卡标题行的高度：右侧的色值输入框与进制切换都是 24dp。 */
 private val CardHeaderHeight = 24.dp
@@ -76,15 +78,20 @@ private val SectionGap = 8.dp
 
 /** 「色彩」页：纯色 / 渐变 / 色阶编辑器。 */
 @Composable
-fun ColorPage(state: LucernaState) {
+fun ColorPage(
+    state: LucernaState,
+) {
     val fill = state.colorDraft
     Column(Modifier.fillMaxSize()) {
         // 预览与类型选择固定在顶部，下面的编辑区正好铺满剩余高度
-        ColorPreview(fill, onReveal = state::openRenders)
+        ColorPreview(
+            fill = fill,
+            onReveal = state::openRenders,
+        )
         Spacer(Modifier.height(SectionGap))
 
         Row(
-            Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(LucernaMetrics.SecondaryGap),
         ) {
             ColorKind.entries.forEach { kind ->
@@ -137,7 +144,14 @@ fun ColorPage(state: LucernaState) {
             modifier = Modifier.fillMaxWidth().height(38.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            RefreshButton(onClick = { state.applyColor(fill) })
+            RefreshButton(
+                onClick = {
+                    // 只换编辑区里的配色，不改壁纸；要生效需再点右侧「添加并应用」
+                    val next = state.colorDraft.randomized()
+                    state.updateColorDraft(next)
+                    state.selectedColorIndex = 0
+                },
+            )
             Spacer(Modifier.width(SectionGap))
             PrimaryButton(
                 text = "添加并应用",
@@ -148,9 +162,15 @@ fun ColorPage(state: LucernaState) {
     }
 }
 
-/** 左下角的刷新按钮：38dp 正方形，与右侧主按钮同高；点击时图标转一整圈。 */
+/**
+ * 左下角的随机配色按钮：38dp 正方形，与右侧主按钮同高；点击时图标转一整圈。
+ *
+ * 只随机编辑区里的配色，不直接改壁纸；壁纸要等用户点「添加并应用」。
+ */
 @Composable
-private fun RefreshButton(onClick: () -> Unit) {
+private fun RefreshButton(
+    onClick: () -> Unit,
+) {
     val rotation = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
     Box(
@@ -159,7 +179,7 @@ private fun RefreshButton(onClick: () -> Unit) {
             .clip(RoundedCornerShape(10.dp))
             .background(Color(0x12FFFFFF))
             .border(1.dp, LucernaColors.Border, RoundedCornerShape(10.dp))
-            .semantics { contentDescription = "刷新壁纸" }
+            .semantics { contentDescription = "随机配色" }
             .clickable {
                 onClick()
                 scope.launch {
@@ -170,7 +190,7 @@ private fun RefreshButton(onClick: () -> Unit) {
         contentAlignment = Alignment.Center,
     ) {
         RefreshGlyph(
-            Modifier.size(16.dp).graphicsLayer { rotationZ = rotation.value },
+            modifier = Modifier.size(16.dp).graphicsLayer { rotationZ = rotation.value },
             color = LucernaColors.TextSecondary,
         )
     }
@@ -178,8 +198,14 @@ private fun RefreshButton(onClick: () -> Unit) {
 
 /** 卡片标题：贴着 GlassCard 的 10dp 内边距，左上距离一致。 */
 @Composable
-private fun CardLabel(text: String) {
-    Text(text, fontSize = 10.5.sp, color = LucernaColors.TextTertiary)
+private fun CardLabel(
+    text: String,
+) {
+    Text(
+        text = text,
+        fontSize = 10.5.sp,
+        color = LucernaColors.TextTertiary,
+    )
 }
 
 /** 颜色槽、分量滑杆与色值输入；色块多了自动换行，加减固定在右侧。 */
@@ -195,7 +221,10 @@ private fun ColorEditorCard(
     var decimal by remember { mutableStateOf(false) }
     val applyColor: (Rgb) -> Unit = { rgb -> state.updateColorDraft(fill.withColor(index, rgb)) }
 
-    GlassCard(modifier, padding = 10) {
+    GlassCard(
+        modifier = modifier,
+        padding = 10,
+    ) {
         Row(
             modifier = Modifier.fillMaxWidth().height(CardHeaderHeight),
             verticalAlignment = Alignment.Top,
@@ -203,9 +232,15 @@ private fun ColorEditorCard(
             CardLabel("颜色")
             Spacer(Modifier.weight(1f))
             if (decimal) {
-                RgbInputs(current, applyColor)
+                RgbInputs(
+                    color = current,
+                    onColor = applyColor,
+                )
             } else {
-                HexColorInput(current, applyColor)
+                HexColorInput(
+                    color = current,
+                    onColor = applyColor,
+                )
             }
             Spacer(Modifier.width(6.dp))
             NumberModeToggle(decimal = decimal) { decimal = it }
@@ -227,12 +262,18 @@ private fun ColorEditorCard(
             }
             if (fill.kind != ColorKind.SOLID) {
                 Spacer(Modifier.width(8.dp))
-                SmallRoundButton(enabled = fill.canAddColor(), positive = true) {
+                SmallRoundButton(
+                    enabled = fill.canAddColor(),
+                    positive = true,
+                ) {
                     state.updateColorDraft(fill.addingColor())
                     state.selectedColorIndex = fill.colors.size
                 }
                 Spacer(Modifier.width(4.dp))
-                SmallRoundButton(enabled = fill.canRemoveColor(), positive = false) {
+                SmallRoundButton(
+                    enabled = fill.canRemoveColor(),
+                    positive = false,
+                ) {
                     val removed = fill.removingColor(state.selectedColorIndex)
                     state.updateColorDraft(removed)
                     state.selectedColorIndex = state.selectedColorIndex.coerceAtMost(removed.wellCount - 1)
@@ -272,7 +313,10 @@ private fun ColorEditorCard(
 
 /** 十六进制 / 十进制切换。 */
 @Composable
-private fun NumberModeToggle(decimal: Boolean, onChange: (Boolean) -> Unit) {
+private fun NumberModeToggle(
+    decimal: Boolean,
+    onChange: (Boolean) -> Unit,
+) {
     Row(
         modifier = Modifier
             .height(24.dp)
@@ -281,13 +325,23 @@ private fun NumberModeToggle(decimal: Boolean, onChange: (Boolean) -> Unit) {
             .border(1.dp, LucernaColors.Border, RoundedCornerShape(6.dp))
             .padding(2.dp),
     ) {
-        ModeSegment("16进制", selected = !decimal) { onChange(false) }
-        ModeSegment("10进制", selected = decimal) { onChange(true) }
+        ModeSegment(
+            text = "16进制",
+            selected = !decimal,
+        ) { onChange(false) }
+        ModeSegment(
+            text = "10进制",
+            selected = decimal,
+        ) { onChange(true) }
     }
 }
 
 @Composable
-private fun ModeSegment(text: String, selected: Boolean, onClick: () -> Unit) {
+private fun ModeSegment(
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
     Box(
         modifier = Modifier
             .fillMaxHeight()
@@ -298,7 +352,7 @@ private fun ModeSegment(text: String, selected: Boolean, onClick: () -> Unit) {
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            text,
+            text = text,
             fontSize = 8.5.sp,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
             color = if (selected) LucernaColors.Accent else LucernaColors.TextTertiary,
@@ -308,7 +362,10 @@ private fun ModeSegment(text: String, selected: Boolean, onClick: () -> Unit) {
 
 /** #FFFFFF：'#' 是前置文本，只有 6 位十六进制可输入。 */
 @Composable
-private fun HexColorInput(color: Rgb, onColor: (Rgb) -> Unit) {
+private fun HexColorInput(
+    color: Rgb,
+    onColor: (Rgb) -> Unit,
+) {
     var text by remember { mutableStateOf(color.toHex().removePrefix("#")) }
     var focused by remember { mutableStateOf(false) }
     LaunchedEffect(color) {
@@ -328,7 +385,11 @@ private fun HexColorInput(color: Rgb, onColor: (Rgb) -> Unit) {
             .padding(horizontal = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("#", fontSize = 12.sp, color = LucernaColors.TextTertiary)
+        Text(
+            text = "#",
+            fontSize = 12.sp,
+            color = LucernaColors.TextTertiary,
+        )
         Spacer(Modifier.width(3.dp))
         BasicTextField(
             value = text,
@@ -355,24 +416,52 @@ private fun HexColorInput(color: Rgb, onColor: (Rgb) -> Unit) {
 
 /** 十进制模式：R / G / B 三个 0–255 输入框，支持上下方向键。 */
 @Composable
-private fun RgbInputs(color: Rgb, onColor: (Rgb) -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-        RgbChannelInput("R", (color.r * 255f).roundToInt(), Color(0xFFFF6B6B)) { value ->
+private fun RgbInputs(
+    color: Rgb,
+    onColor: (Rgb) -> Unit,
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RgbChannelInput(
+            label = "R",
+            value = (color.r * 255f).roundToInt(),
+            tint = Color(0xFFFF6B6B),
+        ) { value ->
             onColor(color.copy(r = value / 255f))
         }
-        RgbChannelInput("G", (color.g * 255f).roundToInt(), Color(0xFF7EDB95)) { value ->
+        RgbChannelInput(
+            label = "G",
+            value = (color.g * 255f).roundToInt(),
+            tint = Color(0xFF7EDB95),
+        ) { value ->
             onColor(color.copy(g = value / 255f))
         }
-        RgbChannelInput("B", (color.b * 255f).roundToInt(), Color(0xFF6BA8FF)) { value ->
+        RgbChannelInput(
+            label = "B",
+            value = (color.b * 255f).roundToInt(),
+            tint = Color(0xFF6BA8FF),
+        ) { value ->
             onColor(color.copy(b = value / 255f))
         }
     }
 }
 
 @Composable
-private fun RgbChannelInput(label: String, value: Int, tint: Color, onValue: (Int) -> Unit) {
+private fun RgbChannelInput(
+    label: String,
+    value: Int,
+    tint: Color,
+    onValue: (Int) -> Unit,
+) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(label, fontSize = 9.5.sp, color = tint, modifier = Modifier.width(10.dp))
+        Text(
+            text = label,
+            fontSize = 9.5.sp,
+            color = tint,
+            modifier = Modifier.width(10.dp),
+        )
         NumericField(
             value = value,
             min = 0,
@@ -385,7 +474,7 @@ private fun RgbChannelInput(label: String, value: Int, tint: Color, onValue: (In
     }
 }
 
-/** 九宫格里的 8 个方向，中心留一个圆点；角度与渐变线一致。 */
+/** 九宫格里的 8 个方向，中心留一个圆点；角度必须与 [ColorFill.DIRECTIONS] 一致。 */
 private val DirectionCells: List<Pair<String?, Float>> = listOf(
     "↖" to 225f, "↑" to 270f, "↗" to 315f,
     "←" to 180f, null to 0f, "→" to 0f,
@@ -394,21 +483,31 @@ private val DirectionCells: List<Pair<String?, Float>> = listOf(
 
 /** 角度圆盘 + 读数 + 右侧 3x3 方向键；九宫格上下左右各留 10dp，与卡片等高。 */
 @Composable
-private fun DirectionCard(fill: ColorFill, state: LucernaState, modifier: Modifier = Modifier) {
-    GlassCard(modifier, padding = 10) {
+private fun DirectionCard(
+    fill: ColorFill,
+    state: LucernaState,
+    modifier: Modifier = Modifier,
+) {
+    GlassCard(
+        modifier = modifier,
+        padding = 10,
+    ) {
         Box(Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxHeight()) {
                 // 与颜色 / 阶数相同：label 距卡片左、上都是 10dp
                 CardLabel("角度")
                 Spacer(Modifier.height(4.dp))
-                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
+                Box(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         AngleDial(angle = fill.angle) { angle ->
                             state.updateColorDraft(fill.copy(angle = angle.toFloat()))
                         }
                         Spacer(Modifier.width(12.dp))
                         Text(
-                            "${fill.angle.roundToInt().mod(360)}°",
+                            text = "${fill.angle.roundToInt().mod(360)}°",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = LucernaColors.Accent,
@@ -423,7 +522,12 @@ private fun DirectionCard(fill: ColorFill, state: LucernaState, modifier: Modifi
                 DirectionCells.chunked(3).forEach { rowCells ->
                     Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                         rowCells.forEach { (label, angle) ->
-                            DirectionCell(label, angle, fill, state)
+                            DirectionCell(
+                                label = label,
+                                angle = angle,
+                                fill = fill,
+                                state = state,
+                            )
                         }
                     }
                 }
@@ -434,9 +538,17 @@ private fun DirectionCard(fill: ColorFill, state: LucernaState, modifier: Modifi
 
 /** 九宫格里的一个方形方向键；label 为 null 时是中心圆点。 */
 @Composable
-private fun DirectionCell(label: String?, angle: Float, fill: ColorFill, state: LucernaState) {
+private fun DirectionCell(
+    label: String?,
+    angle: Float,
+    fill: ColorFill,
+    state: LucernaState,
+) {
     if (label == null) {
-        Box(Modifier.size(30.dp), contentAlignment = Alignment.Center) {
+        Box(
+            modifier = Modifier.size(30.dp),
+            contentAlignment = Alignment.Center,
+        ) {
             Box(Modifier.size(7.dp).clip(CircleShape).background(LucernaColors.BorderStrong))
         }
         return
@@ -457,7 +569,7 @@ private fun DirectionCell(label: String?, angle: Float, fill: ColorFill, state: 
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            label,
+            text = label,
             fontSize = 13.sp,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
             color = if (selected) LucernaColors.Accent else LucernaColors.TextSecondary,
@@ -467,14 +579,24 @@ private fun DirectionCell(label: String?, angle: Float, fill: ColorFill, state: 
 
 /** 色阶阶数：标题与方向对齐，数量居中并可点按 / 长按调节，右下角提示可用区间。 */
 @Composable
-private fun StepsCard(fill: ColorFill, state: LucernaState, modifier: Modifier = Modifier) {
+private fun StepsCard(
+    fill: ColorFill,
+    state: LucernaState,
+    modifier: Modifier = Modifier,
+) {
     val minSteps = fill.colors.size.coerceIn(ColorFill.MIN_STEPS, ColorFill.MAX_STEPS)
-    GlassCard(modifier, padding = 10) {
+    GlassCard(
+        modifier = modifier,
+        padding = 10,
+    ) {
         Column(Modifier.fillMaxSize()) {
             // 与颜色 / 角度相同：label 距卡片左、上都是 10dp
             CardLabel("阶数")
             Spacer(Modifier.height(4.dp))
-            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+            Box(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                contentAlignment = Alignment.Center,
+            ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     NumericField(
                         value = fill.steps,
@@ -487,11 +609,19 @@ private fun StepsCard(fill: ColorFill, state: LucernaState, modifier: Modifier =
                     )
                     Spacer(Modifier.width(4.dp))
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        StepperButton(enabled = fill.steps < ColorFill.MAX_STEPS, up = true, description = "阶数加一") {
+                        StepperButton(
+                            enabled = fill.steps < ColorFill.MAX_STEPS,
+                            up = true,
+                            description = "阶数加一",
+                        ) {
                             val draft = state.colorDraft
                             state.updateColorDraft(draft.copy(steps = draft.steps + 1).normalized())
                         }
-                        StepperButton(enabled = fill.steps > minSteps, up = false, description = "阶数减一") {
+                        StepperButton(
+                            enabled = fill.steps > minSteps,
+                            up = false,
+                            description = "阶数减一",
+                        ) {
                             val draft = state.colorDraft
                             state.updateColorDraft(draft.copy(steps = draft.steps - 1).normalized())
                         }
@@ -505,7 +635,7 @@ private fun StepsCard(fill: ColorFill, state: LucernaState, modifier: Modifier =
                 "$minSteps–${ColorFill.MAX_STEPS} 阶"
             }
             Text(
-                rangeHint,
+                text = rangeHint,
                 fontSize = 9.sp,
                 color = LucernaColors.TextTertiary,
                 modifier = Modifier.align(Alignment.End),
@@ -516,7 +646,12 @@ private fun StepsCard(fill: ColorFill, state: LucernaState, modifier: Modifier =
 
 /** 上下小按钮：点一下走一格，按住后每 60ms 连续走。 */
 @Composable
-private fun StepperButton(enabled: Boolean, up: Boolean, description: String, onStep: () -> Unit) {
+private fun StepperButton(
+    enabled: Boolean,
+    up: Boolean,
+    description: String,
+    onStep: () -> Unit,
+) {
     val scope = rememberCoroutineScope()
     val step by rememberUpdatedState(onStep)
     val tint = if (enabled) LucernaColors.TextSecondary else LucernaColors.TextTertiary
@@ -533,10 +668,10 @@ private fun StepperButton(enabled: Boolean, up: Boolean, description: String, on
                     awaitFirstDown().consume()
                     step()
                     val repeat = scope.launch {
-                        delay(400)
+                        delay(400.milliseconds)
                         while (true) {
                             step()
-                            delay(60)
+                            delay(60.milliseconds)
                         }
                     }
                     waitForUpOrCancellation()
@@ -635,7 +770,10 @@ private fun NumericField(
 }
 
 @Composable
-private fun ColorPreview(fill: ColorFill, onReveal: () -> Unit) {
+private fun ColorPreview(
+    fill: ColorFill,
+    onReveal: () -> Unit,
+) {
     val bitmap = remember(fill) {
         ColorRenderer.render(fill, 720, 405).toComposeImageBitmap()
     }
@@ -651,9 +789,14 @@ private fun ColorPreview(fill: ColorFill, onReveal: () -> Unit) {
                 .clip(RoundedCornerShape(12.dp))
                 .border(1.dp, LucernaColors.Border, RoundedCornerShape(12.dp)),
         ) {
-            Image(bitmap, contentDescription = "色彩预览", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            Image(
+                bitmap = bitmap,
+                contentDescription = "色彩预览",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
             Text(
-                fill.summary(),
+                text = fill.summary(),
                 fontSize = 9.5.sp,
                 color = Color.White.copy(alpha = 0.85f),
                 modifier = Modifier
@@ -668,7 +811,11 @@ private fun ColorPreview(fill: ColorFill, onReveal: () -> Unit) {
 }
 
 @Composable
-private fun ColorWell(color: Rgb, selected: Boolean, onClick: () -> Unit) {
+private fun ColorWell(
+    color: Rgb,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
     Box(
         modifier = Modifier
             .size(22.dp)
@@ -684,7 +831,11 @@ private fun ColorWell(color: Rgb, selected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun SmallRoundButton(enabled: Boolean, positive: Boolean, onClick: () -> Unit) {
+private fun SmallRoundButton(
+    enabled: Boolean,
+    positive: Boolean,
+    onClick: () -> Unit,
+) {
     Box(
         modifier = Modifier
             .size(22.dp)
@@ -695,8 +846,14 @@ private fun SmallRoundButton(enabled: Boolean, positive: Boolean, onClick: () ->
         contentAlignment = Alignment.Center,
     ) {
         val tint = if (enabled) LucernaColors.TextSecondary else LucernaColors.TextTertiary
-        if (positive) PlusGlyph(Modifier.size(8.dp), color = tint)
-        else MinusGlyph(Modifier.size(8.dp), color = tint)
+        if (positive) PlusGlyph(
+            modifier = Modifier.size(8.dp),
+            color = tint,
+        )
+        else MinusGlyph(
+            modifier = Modifier.size(8.dp),
+            color = tint,
+        )
     }
 }
 
@@ -724,8 +881,17 @@ private fun ColorComponentSlider(
         inactiveTickColor = Color.Transparent,
     )
 
-    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        Text(label, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = tint, modifier = Modifier.width(14.dp))
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = tint,
+            modifier = Modifier.width(14.dp),
+        )
         Slider(
             value = value.coerceIn(0f, 1f),
             onValueChange = onChange,
@@ -739,14 +905,17 @@ private fun ColorComponentSlider(
                     enabled = true,
                 )
             },
-            track = { GradientTrack(value.coerceIn(0f, 1f), gradient) },
+            track = { GradientTrack(
+                fraction = value.coerceIn(0f, 1f),
+                gradient = gradient,
+            ) },
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()
                 .semantics { contentDescription = "$label 分量滑杆" },
         )
         Text(
-            "${(value.coerceIn(0f, 1f) * 255).roundToInt()}",
+            text = "${(value.coerceIn(0f, 1f) * 255).roundToInt()}",
             fontSize = 9.5.sp,
             color = LucernaColors.TextTertiary,
             textAlign = TextAlign.End,
@@ -760,7 +929,10 @@ private fun ColorComponentSlider(
  * 末端一个 4dp 的停靠点；区别只是轨道填充用渐变。
  */
 @Composable
-private fun GradientTrack(fraction: Float, gradient: List<Color>) {
+private fun GradientTrack(
+    fraction: Float,
+    gradient: List<Color>,
+) {
     Canvas(Modifier.fillMaxWidth().height(TrackHeight)) {
         val height = size.height
         val outerCorner = height / 2f
@@ -810,7 +982,10 @@ private fun DrawScope.drawTrackPart(
 
 /** 可拖动的方向圆盘，0° 指向右侧，顺时针增长。 */
 @Composable
-private fun AngleDial(angle: Float, onChange: (Int) -> Unit) {
+private fun AngleDial(
+    angle: Float,
+    onChange: (Int) -> Unit,
+) {
     val onAngle by rememberUpdatedState(onChange)
     Canvas(
         modifier = Modifier

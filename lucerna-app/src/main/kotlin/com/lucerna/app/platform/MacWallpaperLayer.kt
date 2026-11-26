@@ -14,19 +14,36 @@ import javax.swing.JWindow
 import kotlin.math.max
 import kotlin.math.roundToInt
 
+/** 视频壁纸的运行时参数。 */
+internal data class VideoWallpaperPlayback(
+    val volume: Float = 0f,
+    val muted: Boolean = true,
+    val speed: Float = 1f,
+    val enabled: Boolean = true,
+)
+
 /**
  * 桌面壁纸层：不用系统壁纸服务，直接把壁纸画在每一块屏幕的「桌面层级」窗口里。
  *
  * 每个窗口：层级在系统壁纸之上、桌面图标之下；鼠标事件全部穿透给系统；
  * 出现在所有 Space（切桌面不闪、不重建）；没有阴影、不抢焦点。
- * 所以换壁纸只是换窗口里的图片 —— 不重启任何系统服务，也就没有灰屏。
+ * 图片是窗口里的 AWT canvas；视频是原生 AVPlayerLayer，所有屏幕共享同一个 AVPlayer。
  */
 internal class MacWallpaperLayer {
 
-    /** 一块屏幕上的壁纸窗口。 */
-    private class LayerWindow(val screen: Rectangle, val window: JWindow, val canvas: WallpaperCanvas) {
+    /** 一块屏幕上的壁纸窗口；图片用 [canvas]，视频用 [video]，两者只会有其一。 */
+    private class LayerWindow(
+        val screen: Rectangle,
+        val window: JWindow,
+        val canvas: WallpaperCanvas?,
+        val video: Boolean,
+    ) {
         /** 层级是否已经调好；没调好的窗口是隐藏的，巡检时再补一次。 */
         var tuned = false
+
+        fun dispose() {
+            runCatching { window.dispose() }
+        }
     }
 
     private val windows = ArrayList<LayerWindow>()
@@ -37,8 +54,31 @@ internal class MacWallpaperLayer {
     @Volatile
     private var currentImage: BufferedImage? = null
 
+    /** 当前视频路径；非空时窗口里是视频。 */
+    @Volatile
+    private var currentVideoPath: String? = null
+
+    /** 视频的静态封面，用来给窗口垫底。 */
+    @Volatile
+    private var currentPoster: BufferedImage? = null
+
+    @Volatile
+    private var playback = VideoWallpaperPlayback()
+
+    /** 所有屏幕共享的 AVFoundation 播放器；只在视频壁纸期间存在。 */
+    @Volatile
+    private var videoSession: MacAvVideo.Session? = null
+
     @Volatile
     private var lastError: String? = null
+
+    /** 在全屏 Space 里换过壁纸后，切回桌面时检查窗口是否真的还在屏上。 */
+    @Volatile
+    private var checkOnReveal = false
+
+    /** 上一次巡检时是否有屏幕被全屏 app 覆盖。 */
+    @Volatile
+    private var wasCovered = false
 
     /** 每 0.8 秒检查一次屏幕布局：插上/拔掉显示器、改分辨率都会重建窗口，保证每块屏都有壁纸。 */
     private val screenWatcher = Executors.newSingleThreadScheduledExecutor { runnable ->
@@ -73,7 +113,6 @@ internal class MacWallpaperLayer {
      */
     fun apply(imagePath: String, isStale: () -> Boolean): Boolean {
         if (DesktopOs.current != DesktopOs.MACOS) return false
-
         val cached = currentImage
         if (imagePath == currentImagePath && cached != null) {
             // 同一张图（例如重复点同一张壁纸）：不解码，直接确保窗口在显示
@@ -85,18 +124,109 @@ internal class MacWallpaperLayer {
             if (isStale()) return true
             if (!showOnScreen(imagePath, image)) return false
         }
+        disposeVideoSession()
 
         startWatching()
         // CGWindowList 解析要几十毫秒，放在换图之后做：此时 EDT 已经在画新壁纸了。
         // 已经被新请求取代时直接跳过，把时间留给下一张。
-        if (!isStale()) hideCoveredScreens()
+        if (!isStale()) refreshCoverage(markRevealCheck = true)
         return true
+    }
+
+    /**
+     * 在桌面层里播放视频壁纸。
+     *
+     * 一块屏幕一个 AVPlayerLayer，但三块屏共享一个 AVPlayer：只解码一次、同一帧、同一进度。
+     * [posterPath] 用作窗口首帧垫底，也由后端写进系统 Desktop 壁纸，供 Space/调度中心过渡动画使用；
+     * 系统 Idle（锁屏）配置不动。
+     */
+    fun applyVideo(
+        videoPath: String,
+        posterPath: String,
+        playback: VideoWallpaperPlayback,
+        isStale: () -> Boolean = { false },
+    ): Boolean {
+        if (DesktopOs.current != DesktopOs.MACOS) return false
+        if (!MacAvVideo.supports(videoPath)) {
+            println("[Lucerna] native AVPlayer does not support ${File(videoPath).extension}; fallback to poster")
+            return false
+        }
+        this.playback = playback
+
+        if (currentVideoPath == videoPath && windows.isNotEmpty() && videoSession != null) {
+            runOnEdt { updateVideoPlayback() }
+            startWatching()
+            refreshCoverage(markRevealCheck = true)
+            return true
+        }
+
+        if (isStale()) return true
+        val poster = load(posterPath)
+        if (isStale()) return true
+
+        val initialRate = if (playback.enabled && playback.speed > 0f) playback.speed else 0f
+        val session = MacAvVideo.open(videoPath, initialRate, playback.volume, playback.muted) ?: run {
+            println("[Lucerna] native AVPlayer failed to open $videoPath")
+            return false
+        }
+        if (isStale()) {
+            MacAvVideo.dispose(session)
+            return true
+        }
+        val oldSession = videoSession
+        videoSession = session
+
+        var failure: String? = null
+        runOnEdt {
+            currentVideoPath = videoPath
+            currentPoster = poster
+            currentImagePath = null
+            currentImage = null
+            val screens = screenBounds()
+            if (screens.isEmpty()) {
+                failure = "no screens"
+                return@runOnEdt
+            }
+            rebuild(screens)
+            updateVideoPlayback()
+            val unsupported = windows.count { it.window.isVisible && !tune(it) }
+            if (unsupported > 0) failure = "desktop layer unsupported on $unsupported window(s)"
+        }
+        oldSession?.let(MacAvVideo::dispose)
+        lastError = failure
+        startWatching()
+        if (!isStale()) refreshCoverage(markRevealCheck = true)
+        return failure == null
+    }
+
+    /** 倍速 / 音量 / 暂停等参数变化时调用，不影响当前视频的播放位置。 */
+    fun updatePlayback(playback: VideoWallpaperPlayback) {
+        this.playback = playback
+        runOnEdt { updateVideoPlayback() }
+    }
+
+    private fun updateVideoPlayback() {
+        val session = videoSession ?: return
+        // 全屏 app / 调度中心覆盖时也继续保持播放：
+        // 一是不让过渡动画里的视频落后或停住，二是避免全屏检测在动画期间反复改 rate 造成卡顿。
+        val anyVisible = windows.any { it.video && it.window.isVisible }
+        val rate = if (playback.enabled && anyVisible && playback.speed > 0f) playback.speed else 0f
+        MacAvVideo.update(session, rate, playback.volume, playback.muted)
+    }
+
+    private fun disposeVideoSession() {
+        val session = videoSession ?: return
+        videoSession = null
+        MacAvVideo.dispose(session)
     }
 
     /** 把一张已经解好的图换到所有窗口上；第一次还会补建/调层级。 */
     private fun showOnScreen(imagePath: String, image: BufferedImage): Boolean {
         var failure: String? = null
         runOnEdt {
+            val wasVideo = currentVideoPath != null
+            currentVideoPath = null
+            currentPoster = null
             currentImagePath = imagePath
             currentImage = image
             val screens = screenBounds()
@@ -104,9 +234,9 @@ internal class MacWallpaperLayer {
                 failure = "no screens"
                 return@runOnEdt
             }
-            if (!matchesScreens(screens)) rebuild(screens, image)
+            if (wasVideo || !matchesScreens(screens)) rebuild(screens)
             // 登记重绘后立即返回，真正的绘制在 EDT 的下一次重绘里
-            windows.forEach { it.canvas.setWallpaper(image) }
+            windows.forEach { it.canvas?.setWallpaper(image) }
             val unsupported = windows.count { it.window.isVisible && !tune(it) }
             if (unsupported > 0) failure = "desktop layer unsupported on $unsupported window(s)"
         }
@@ -165,14 +295,10 @@ internal class MacWallpaperLayer {
         }
     }
 
-    /**
-     * 某块屏幕被全屏 app 占着时，把这层窗口藏起来 —— 无论如何都不会盖住全屏 app。
-     *
-     * 全屏 Space 里本来也看不到桌面，而系统壁纸是同一张图，所以藏起来用户完全无感；
-     * 退出全屏后（下一轮巡检，最快 0.8 秒）窗口再显示出来。
-     */
-    private fun hideCoveredScreens() {
+    /** 刷新全屏状态：全屏 app 占着屏幕时只暂停视频，不隐藏壁纸窗。 */
+    private fun refreshCoverage(markRevealCheck: Boolean = false) {
         val covered = runCatching { MacFullscreenDetector.fullscreenScreens() }.getOrElse { emptyList() }
+        if (markRevealCheck && covered.isNotEmpty()) checkOnReveal = true
         runOnEdt { applyVisibility(covered) }
     }
 
@@ -202,21 +328,24 @@ internal class MacWallpaperLayer {
         watching = false
         runCatching { screenWatcher.shutdownNow() }
         runOnEdt {
-            windows.forEach { runCatching { it.window.dispose() } }
+            windows.forEach { it.dispose() }
             windows.clear()
             currentImagePath = null
             currentImage = null
+            currentVideoPath = null
+            currentPoster = null
         }
+        disposeVideoSession()
     }
 
-    /** 屏幕巡检：布局变了就重建，否则只补调层级；最后同步全屏显隐。必须在 EDT 上调用。 */
+    /** 屏幕巡检：布局变了就重建，否则只补调层级；最后刷新全屏状态。必须在 EDT 上调用。 */
     private fun refreshLayout(screens: List<Rectangle>, covered: List<Rectangle>) {
         if (DesktopOs.current != DesktopOs.MACOS) return
         if (!matchesScreens(screens)) {
             println("[Lucerna] screens changed -> rebuild wallpaper layer for ${screens.size} screen(s)")
-            rebuild(screens, currentImage)
+            rebuild(screens)
             val image = currentImage
-            if (image != null) windows.forEach { it.canvas.setWallpaper(image) }
+            if (image != null) windows.forEach { it.canvas?.setWallpaper(image) }
         } else {
             // 已经调好的窗口不必每秒重新反射 + 切 AppKit 线程
             windows.forEach { if (!it.tuned) tune(it) }
@@ -224,17 +353,50 @@ internal class MacWallpaperLayer {
         applyVisibility(covered)
     }
 
-    /** 被全屏 app 覆盖的屏幕隐藏壁纸窗，其余显示。必须在 EDT 上调用。 */
+    /**
+     * 全屏 app / 调度中心覆盖时既**不隐藏窗口，也不暂停共享播放器**。
+     *
+     * 隐藏再显示会让 AppKit 把桌面层窗口移出当前 Space；暂停播放又会让过渡动画里的
+     * 视频停在旧帧，或在全屏检测抖动时反复 rate 0/1 造成一卡一卡。
+     * 桌面层通过 fullScreenAuxiliary 进入全屏 Space 的过渡快照，层级又低于全屏 app，
+     * 所以让它一直播放既安全，也能让调度中心 / 切桌面的动画直接看到当前视频。
+     *
+     * 必须在 EDT 上调用。
+     */
     private fun applyVisibility(covered: List<Rectangle>) {
-        windows.forEach { layer ->
-            val shouldShow = covered.none { it == layer.screen }
-            if (layer.window.isVisible != shouldShow) {
-                layer.window.isVisible = shouldShow
-                // 显隐会让 AWT 把窗口层级重置成普通窗口，下次显示时要重新调
-                layer.tuned = false
-                if (shouldShow) tune(layer)
+        val nowCovered = covered.isNotEmpty()
+        if (wasCovered && !nowCovered) checkOnReveal = true
+        wasCovered = nowCovered
+
+        // 切出全屏后，AppKit 有时会把桌面层窗口移出当前 Space：
+        // isVisible 仍是 true，WindowServer 里却已经不在屏上。这里做一次实际校验，
+        // 只在真的缺窗口时重建，避免每次全屏退出都闪一下。
+        if (checkOnReveal && !nowCovered) {
+            checkOnReveal = false
+            val screens = screenBounds()
+            val level = MacNative.desktopLayerLevel()
+            val onScreen = MacFullscreenDetector.ownWindows().count { it.level == level && it.onScreen }
+            if (windows.size != screens.size || onScreen < screens.size) {
+                println(
+                    "[Lucerna] wallpaper layer missing after fullscreen " +
+                        "(windows=${windows.size}, onscreen=$onScreen, screens=${screens.size}) -> rebuild",
+                )
+                rebuild(screens)
             }
         }
+        windows.forEach { layer ->
+            if (!layer.window.isVisible) {
+                // 只有调层级失败的窗口会处于隐藏状态；层级恢复后再显示，失败则继续隐藏
+                if (tune(layer)) {
+                    layer.window.isVisible = true
+                    layer.tuned = false
+                    if (!tune(layer)) layer.window.isVisible = false
+                }
+            } else if (!layer.tuned) {
+                tune(layer)
+            }
+        }
+        updateVideoPlayback()
     }
 
     // --- 内部实现 ---
@@ -242,32 +404,54 @@ internal class MacWallpaperLayer {
     private fun matchesScreens(screens: List<Rectangle>): Boolean =
         windows.size == screens.size && windows.indices.all { windows[it].screen == screens[it] }
 
-    private fun rebuild(screens: List<Rectangle>, image: BufferedImage?) {
-        windows.forEach { runCatching { it.window.dispose() } }
+    private fun rebuild(screens: List<Rectangle>) {
+        windows.forEach { it.dispose() }
         windows.clear()
-        // 首帧还没画上图时窗口底色会露出来：用这张图的平均色垫底，比黑色闪烁轻得多
-        val tint = image?.averageColor() ?: Color.BLACK
+        val videoPath = currentVideoPath
+        val image = currentImage
+        // 首帧还没画出来时窗口底色会露出来：用图片 / 视频封面的平均色垫底，比黑色闪烁轻得多
+        val tint = (image ?: currentPoster)?.averageColor() ?: Color.BLACK
         screens.forEach { screen ->
-            val canvas = WallpaperCanvas().apply { setWallpaper(image) }
             val window = JWindow().apply {
                 setFocusableWindowState(false)
                 isAutoRequestFocus = false
                 background = tint
                 contentPane.background = tint
                 contentPane.layout = java.awt.BorderLayout()
-                contentPane.add(canvas, java.awt.BorderLayout.CENTER)
                 setBounds(screen)
-                // 先把 NSWindow 建出来但不显示（addNotify），把层级和「加入所有 Space」设好再显示。
-                // 否则窗口会先被绑到「当前 Space」：在全屏 app 占着这块屏幕时建窗口，
-                // 回到桌面 Space 后这个窗口就看不到，那块屏就会漏出系统壁纸。
-                runCatching { addNotify() }
             }
-            val layer = LayerWindow(screen, window, canvas)
+            val canvas: WallpaperCanvas?
+            val video: Boolean
+            if (videoPath != null) {
+                canvas = null
+                video = true
+            } else {
+                canvas = WallpaperCanvas().apply { setWallpaper(image) }
+                video = false
+                window.contentPane.add(canvas, java.awt.BorderLayout.CENTER)
+            }
+            // 先把 NSWindow 建出来但不显示（addNotify），把层级和「加入所有 Space」设好再显示。
+            // 否则窗口会先被绑到「当前 Space」：在全屏 app 占着这块屏幕时建窗口，
+            // 回到桌面 Space 后这个窗口就看不到，那块屏就会漏出系统壁纸。
+            runCatching { window.addNotify() }
+
+            val layer = LayerWindow(screen, window, canvas, video)
             windows.add(layer)
             val tunedBeforeShow = tune(layer)
             window.isVisible = true
+            if (video) {
+                // 一块屏幕一个 AVPlayerLayer，但共用同一个 AVPlayer；视频只解码一次
+                val session = videoSession
+                val attached = session?.let { MacAvVideo.attach(it, window) }
+                if (attached == null) {
+                    println("[Lucerna] native video layer attach failed on ${screen.width}x${screen.height}")
+                    window.isVisible = false
+                }
+            }
             // EDT 正忙（例如刚启动面板）时首帧可能来不及画，同步补一次，别让底色停留
-            runCatching { canvas.paintImmediately(0, 0, canvas.width, canvas.height) }
+            if (canvas != null) {
+                runCatching { canvas.paintImmediately(0, 0, canvas.width, canvas.height) }
+            }
             // 显示后再设一次：AWT 在显示时会把层级重置成普通窗口
             layer.tuned = false
             val tunedAfterShow = tune(layer)

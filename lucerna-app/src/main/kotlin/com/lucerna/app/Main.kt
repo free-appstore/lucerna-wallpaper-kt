@@ -23,24 +23,31 @@ import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import com.lucerna.app.platform.*
 import com.lucerna.core.model.TrayIconStyle
-import com.lucerna.core.model.WallpaperItem
+import com.lucerna.core.paths.AppPaths
 import com.lucerna.core.model.WallpaperType
+import com.lucerna.media.probeVideoSize
 import com.lucerna.ui.panel.LucernaPanel
 import com.lucerna.ui.preview.PreviewWindowContent
 import com.lucerna.ui.state.PanelTab
+import com.lucerna.ui.state.PreviewRequest
 import com.lucerna.ui.theme.LucernaTheme
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.awt.Dimension
 import java.awt.event.WindowEvent
 import java.awt.event.WindowFocusListener
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 private const val PANEL_WIDTH = 392
 /** 高度正好容纳「色彩」页：头部 66 + 分页 36 + 上下 12 + 页内容 610。 */
 private const val PANEL_HEIGHT = 736
-private const val PREVIEW_WIDTH = 1040
-private const val PREVIEW_HEIGHT = 700
+/** 预览窗口展开 / 收起的动画时长。 */
+private const val PREVIEW_OPEN_MS = 200
+private const val PREVIEW_CLOSE_MS = 150
 
 fun main(args: Array<String>) {
     // 先设置再初始化 AWT：隐藏 Dock 图标；托盘使用彩色实心图标
@@ -84,6 +91,11 @@ fun main(args: Array<String>) {
         kotlin.system.exitProcess(if (ok) 0 else 1)
     }
 
+    if (args.contains("--smoke-spaces")) {
+        val ok = WallpaperSpaceSmoke.run()
+        kotlin.system.exitProcess(if (ok) 0 else 1)
+    }
+
     val seedIndex = args.indexOf("--seed-dir")
     if (seedIndex >= 0 && seedIndex + 1 < args.size) {
         SeedDemo.run(args[seedIndex + 1])
@@ -107,10 +119,59 @@ fun main(args: Array<String>) {
         // 窗口内容里的 LaunchedEffect(panelVisible) 里（第二次打开时它不会重跑），
         // 这里保存窗口引用，由 showPanel 每次打开时主动请求焦点。
         var panelWindow by remember { mutableStateOf<java.awt.Window?>(null) }
-        var previewItem by remember { mutableStateOf<WallpaperItem?>(null) }
         val dismissGuard = remember { DismissGuard() }
+
+        // 预览窗口：先解析媒体尺寸再开窗（视频会让播放器读一次元数据），
+        // 然后用内容缩放 + 淡入展开，避免先按占位比例打开再跳一下。
+        var previewSession by remember { mutableStateOf<PreviewSession?>(null) }
+        // 正在解析尺寸 / 等待开窗；这期间窗口还没出现，面板不要因为失焦收起
+        var previewBusy by remember { mutableStateOf(false) }
+        val previewProgress = remember { Animatable(0f) }
+        val previewScope = rememberCoroutineScope()
+        var previewJob by remember { mutableStateOf<Job?>(null) }
+
+        fun openPreview(request: PreviewRequest) {
+            previewJob?.cancel()
+            previewBusy = true
+            previewJob = previewScope.launch {
+                val size = withContext(Dispatchers.IO) { request.item.mediaSizeForPreview() }
+                    ?: if (request.item.type == WallpaperType.VIDEO) {
+                        // 允许等一会儿：先读到真实比例再开窗，避免先按占位比例打开再跳一下
+                        probeVideoSize(request.item.path, timeout = 3.seconds)
+                    } else {
+                        null
+                    }
+                val (mediaWidth, mediaHeight) = size ?: FallbackMediaSize
+                previewProgress.snapTo(0f)
+                previewSession = PreviewSession(
+                    item = request.item,
+                    bounds = PanelPlacement.previewBounds(mediaWidth, mediaHeight),
+                    anchor = request.anchor,
+                    mediaSizeKnown = size != null,
+                )
+                previewBusy = false
+                previewProgress.animateTo(
+                    targetValue = 1f,
+                    animationSpec = tween(PREVIEW_OPEN_MS, easing = FastOutSlowInEasing),
+                )
+            }
+        }
+
+        fun closePreview() {
+            previewJob?.cancel()
+            previewBusy = false
+            val session = previewSession ?: return
+            previewJob = previewScope.launch {
+                previewProgress.animateTo(
+                    targetValue = 0f,
+                    animationSpec = tween(PREVIEW_CLOSE_MS, easing = FastOutLinearInEasing),
+                )
+                if (previewSession === session) previewSession = null
+            }
+        }
+
         val state = remember {
-            environment.createState { request -> previewItem = request.item }
+            environment.createState { request -> openPreview(request) }
         }
         val initialBounds = remember { PanelPlacement.panelBounds(PANEL_WIDTH, PANEL_HEIGHT) }
         val panelWindowState = rememberWindowState(
@@ -142,7 +203,7 @@ fun main(args: Array<String>) {
                 repeat(10) {
                     val window = panelWindow
                     if (window == null) {
-                        delay(60)
+                        delay(60.milliseconds)
                         return@repeat
                     }
                     if (window.isShowing) {
@@ -151,7 +212,7 @@ fun main(args: Array<String>) {
                         window.requestFocus()
                         window.requestFocusInWindow()
                     }
-                    delay(60)
+                    delay(60.milliseconds)
                     if (window.isFocused && panelOpen) {
                         panelHasFocused = true
                         return@launch
@@ -263,10 +324,10 @@ fun main(args: Array<String>) {
                         }
 
                         override fun windowLostFocus(event: WindowEvent?) {
-                            if (previewItem != null || !panelOpen || !panelHasFocused) return
+                            if (previewSession != null || previewBusy || !panelOpen || !panelHasFocused) return
                             // 切换瞬间可能只是短暂失焦：稍等一下，确认确实没有焦点再收起
                             windowScope.launch {
-                                delay(120)
+                                delay(120.milliseconds)
                                 val settled = System.currentTimeMillis() - panelShownAt > 250
                                 if (settled && panelOpen && !window.isFocused) {
                                     dismissGuard.markHidden()
@@ -290,47 +351,82 @@ fun main(args: Array<String>) {
                                 transformOrigin = TransformOrigin(0.5f, 0f)
                             },
                     ) {
-                        LucernaPanel(state, Modifier.fillMaxSize())
+                        LucernaPanel(
+                            state = state,
+                            modifier = Modifier.fillMaxSize(),
+                        )
                     }
                 }
             }
         }
 
-        previewItem?.let { item ->
-            key("preview", item.id) {
+        previewSession?.let { session ->
+            key("preview", session.item.id) {
+                val previewWindowState = rememberWindowState(
+                    position = WindowPosition.Absolute(session.bounds.x.dp, session.bounds.y.dp),
+                    size = DpSize(session.bounds.width.dp, session.bounds.height.dp),
+                )
+                val transformOrigin = session.transformOrigin()
                 Window(
-                    onCloseRequest = { previewItem = null },
-                    state = rememberWindowState(size = DpSize(PREVIEW_WIDTH.dp, PREVIEW_HEIGHT.dp)),
-                    title = "预览 - ${item.name}",
+                    onCloseRequest = { closePreview() },
+                    state = previewWindowState,
+                    title = "预览 - ${session.item.name}",
                     undecorated = true,
                     transparent = true,
-                    resizable = true,
+                    resizable = false,
                     alwaysOnTop = true,
                     focusable = true,
                     onPreviewKeyEvent = { event ->
                         if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
-                            previewItem = null
+                            closePreview()
                             true
                         } else {
                             false
                         }
                     },
                 ) {
+                    // 尺寸在开窗前就按媒体比例算好了；只有视频探测失败时才会在播放器回报后校正一次
+                    LaunchedEffect(session) {
+                        previewWindowState.position =
+                            WindowPosition.Absolute(session.bounds.x.dp, session.bounds.y.dp)
+                        previewWindowState.size =
+                            DpSize(session.bounds.width.dp, session.bounds.height.dp)
+                    }
                     LaunchedEffect(window) {
                         window.background = java.awt.Color(0, 0, 0, 0)
-                        window.minimumSize = Dimension(560, 400)
-                        window.setBounds(PanelPlacement.centeredBounds(PREVIEW_WIDTH, PREVIEW_HEIGHT))
+                        window.isResizable = false
                         window.toFront()
                         window.requestFocus()
                         MacNative.activateApp()
                     }
                     LucernaTheme {
-                        PreviewWindowContent(
-                            item = item,
-                            volume = state.settings.volume,
-                            muted = !state.settings.audioEnabled,
-                            onClose = { previewItem = null },
-                        )
+                        // 窗口本身停在屏幕中央，内容以光标为原点 0→1 缩放并淡入 / 淡出
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer {
+                                    val progress = previewProgress.value
+                                    scaleX = progress
+                                    scaleY = progress
+                                    alpha = progress
+                                    this.transformOrigin = transformOrigin
+                                },
+                        ) {
+                            PreviewWindowContent(
+                                item = session.item,
+                                volume = state.settings.volume,
+                                muted = !state.settings.audioEnabled,
+                                onVideoSize = { width, height ->
+                                    if (!session.mediaSizeKnown) {
+                                        previewSession = session.copy(
+                                            bounds = PanelPlacement.previewBounds(width, height),
+                                            mediaSizeKnown = true,
+                                        )
+                                    }
+                                },
+                                onClose = { closePreview() },
+                            )
+                        }
                     }
                 }
             }
@@ -345,18 +441,18 @@ fun main(args: Array<String>) {
             }
             when (System.getenv("LUCERNA_SMOKE_PREVIEW")?.lowercase()) {
                 "video" -> state.items.firstOrNull { it.type == WallpaperType.VIDEO }?.let {
-                    previewItem = it
                     panelVisible = false
+                    openPreview(PreviewRequest(it))
                 }
 
                 "image" -> state.items.firstOrNull { it.type == WallpaperType.IMAGE }?.let {
-                    previewItem = it
                     panelVisible = false
+                    openPreview(PreviewRequest(it))
                 }
 
                 "first" -> state.items.firstOrNull()?.let {
-                    previewItem = it
                     panelVisible = false
+                    openPreview(PreviewRequest(it))
                 }
             }
             when (System.getenv("LUCERNA_SMOKE_TRAY")?.lowercase()) {

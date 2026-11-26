@@ -6,13 +6,20 @@ import java.io.File
 /** 支持的图片与视频扩展名，统一小写、不带点。 */
 object MediaFormats {
 
-    val IMAGE_EXTENSIONS: Set<String> = setOf(
-        "jpg", "jpeg", "png", "webp", "bmp", "gif", "tif", "tiff", "heic", "heif", "avif",
-    )
+/**
+ * 只列 Coil3（Skia）确实能解码的图片格式。
+ *
+ * 系统「预览」能打开 HEIC / HEIF / AVIF / TIFF，但 Skia 解不了，
+ * 列出来只会得到破图或空白，所以这里不支持它们。
+ */
+val IMAGE_EXTENSIONS: Set<String> = setOf(
+    "jpg", "jpeg", "jfif", "png", "webp", "bmp", "gif",
+)
 
-    val VIDEO_EXTENSIONS: Set<String> = setOf(
-        "mp4", "mov", "m4v", "mkv", "webm", "avi", "wmv", "flv", "ts", "m2ts", "mpg", "mpeg", "3gp",
-    )
+/** 视频由 MediaMP 的 mpv / FFmpeg 解码，这些容器都能读。 */
+val VIDEO_EXTENSIONS: Set<String> = setOf(
+    "mp4", "mov", "m4v", "mkv", "webm", "avi", "wmv", "flv", "ts", "m2ts", "mpg", "mpeg", "3gp",
+)
 
     fun extensionOf(file: File): String = file.name.substringAfterLast('.', "").lowercase()
 

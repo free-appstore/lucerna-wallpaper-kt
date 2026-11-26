@@ -22,6 +22,7 @@ internal object MacNative {
     private val msgSend by lazy { libObjc.getFunction("objc_msgSend") }
     private val getClassFn by lazy { libObjc.getFunction("objc_getClass") }
     private val selFn by lazy { libObjc.getFunction("sel_registerName") }
+    private val objectClassNameFn by lazy { libObjc.getFunction("object_getClassName") }
 
     private fun cls(name: String): Pointer = getClassFn.invokePointer(arrayOf(name))
 
@@ -154,6 +155,56 @@ internal object MacNative {
     }
 
     /**
+     * 把 AWT 托盘图标的 `NSImage` 标记成 template。
+     *
+     * macOS 的 template 图标只使用 alpha，系统会按菜单栏前景色自动渲染成白色或黑色，
+     * 菜单栏跟随壁纸/深浅色变化时也会自动切换。AWT 没有公开这个开关，只能从
+     * `NSApp.windows` 里找到 `NSStatusBarWindow`，再给 `AWTTrayIconView` 的图片设置 template。
+     *
+     * 返回 false 表示没找到状态栏视图（换 JDK / 系统时调用方回退到普通图标）。
+     */
+    fun setTrayIconTemplate(template: Boolean): Boolean = runCatching {
+        val app = send(cls("NSApplication"), "sharedApplication")
+        val windows = send(app, "windows")
+        if (Pointer.nativeValue(windows) == 0L) return@runCatching false
+        val count = sendLong(windows, "count")
+        var applied = false
+        for (i in 0 until count) {
+            val window = msgSend.invokePointer(arrayOf(windows, sel("objectAtIndex:"), i))
+            if (Pointer.nativeValue(window) == 0L) continue
+            val windowClass = objectClassNameFn.invokePointer(arrayOf(window))?.getString(0).orEmpty()
+            if (!windowClass.contains("StatusBarWindow")) continue
+            val content = send(window, "contentView")
+            applied = applyTemplateToView(content, template, 0) || applied
+        }
+        applied
+    }.getOrDefault(false)
+
+    private fun applyTemplateToView(view: Pointer, template: Boolean, depth: Int): Boolean {
+        if (Pointer.nativeValue(view) == 0L || depth > 4) return false
+        var applied = false
+        val viewClass = objectClassNameFn.invokePointer(arrayOf(view))?.getString(0).orEmpty()
+        if (viewClass.contains("TrayIconView")) {
+            val image = send(view, "image")
+            if (Pointer.nativeValue(image) != 0L) {
+                msgSend.invokeVoid(
+                    arrayOf(image, sel("setTemplate:"), if (template) 1.toByte() else 0.toByte()),
+                )
+                applied = true
+            }
+        }
+        val subviews = send(view, "subviews")
+        if (Pointer.nativeValue(subviews) != 0L) {
+            val count = sendLong(subviews, "count")
+            for (i in 0 until count) {
+                val sub = msgSend.invokePointer(arrayOf(subviews, sel("objectAtIndex:"), i))
+                applied = applyTemplateToView(sub, template, depth + 1) || applied
+            }
+        }
+        return applied
+    }
+
+    /**
      * 「系统设置 → 菜单栏 → 显示菜单栏背景」是否打开（`SLSMenuBarUseBlurredAppearance`）。
      *
      * 关闭时菜单栏是透明的，直接透出壁纸层的新图，不需要让开那一条给系统采样。
@@ -225,10 +276,10 @@ internal object MacNative {
         }
         sendVoid(nsWindow, "setLevel:", level.toLong())
         // canJoinAllSpaces(1) | stationary(16) | ignoresCycle(64)
-        // 不加 fullScreenAuxiliary：加了之后 macOS 会把这一层放进全屏 Space，
-        // 有可能被提到全屏 app 之上（壁纸盖住全屏的 IDE / 浏览器）。
-        // 全屏 Space 里本来也看不到桌面，过渡动画漏出来的那几帧由「垫底的同款系统壁纸」兜住。
-        sendVoid(nsWindow, "setCollectionBehavior:", 1L or 16L or 64L)
+        // fullScreenAuxiliary(256)：让桌面层也进入全屏 Space 的过渡快照。
+        // 否则从全屏 app 打开调度中心 / 切回桌面时，动画用的是不含壁纸层的系统快照，
+        // 动画结束才看到视频壁纸。窗口层级仍远低于全屏 app，不会盖住全屏窗口。
+        sendVoid(nsWindow, "setCollectionBehavior:", 1L or 16L or 64L or 256L)
         sendVoid(nsWindow, "setIgnoresMouseEvents:", 1L)
         sendVoid(nsWindow, "setHasShadow:", 0L)
         sendVoid(nsWindow, "setHidesOnDeactivate:", 0L)
@@ -262,6 +313,17 @@ internal object MacNative {
         val value = field.getLong(platformWindow)
         if (value == 0L) null else Pointer(value)
     }.getOrNull()
+
+    /** 给 AVPlayer 之类的原生扩展用：在 AppKit 主线程执行。 */
+    internal fun <T : Any> onAppKitThread(work: () -> T?): T? = runOnAppKitThread(work)
+
+    /** 当前 AWT 窗口的 NSView contentView。必须在 AppKit 主线程调用。 */
+    internal fun contentViewPointer(window: Window): Pointer? = runOnAppKitThread {
+        nsWindowPointer(window)?.let { nsWindow ->
+            val view = send(nsWindow, "contentView")
+            if (Pointer.nativeValue(view) == 0L) null else view
+        }
+    }
 
     /** 应用窗口激活，让弹出的面板能立刻接收键盘输入。 */
     fun activateApp() {

@@ -7,6 +7,7 @@ import com.lucerna.core.actions.WallpaperActions
 import com.lucerna.core.media.VideoPoster
 import com.lucerna.core.model.ColorFill
 import com.lucerna.core.model.TrayIconStyle
+import com.lucerna.core.model.VideoPlaybackSpeed
 import com.lucerna.core.model.WallpaperItem
 import com.lucerna.core.model.WallpaperSource
 import com.lucerna.core.model.WallpaperType
@@ -23,14 +24,13 @@ import java.util.concurrent.atomic.AtomicLong
 /**
  * 把界面动作落到系统上。
  *
- * 所有壁纸都只通过系统壁纸接口设置，不创建额外的桌面窗口：
+ * 所有壁纸都通过桌面壁纸层 / 系统壁纸接口设置，不创建普通窗口：
  * - 图片：直接设置原图
  * - 色彩：渲染成 PNG 后设置
- * - 视频：提取一帧封面后设置（本版本不播放动态壁纸，避免出现额外窗口）
+ * - 视频：桌面层共享 AVPlayer 播放；系统 Desktop 用视频封面垫底，Idle（锁屏）保持不动
  *
- * 设置项由 [com.lucerna.ui.state.LucernaState] 先写进 settings.json 再调用这里的动作，
- * 所以这里不再重复保存（以前每切一次开关要序列化并写两次同一个文件）。
- * 只需要落盘的动作（登录启动、屏保、多空间）也由界面负责保存。
+ * 设置项由 [com.lucerna.ui.state.LucernaState] 先写进数据库再调用这里的动作，
+ * 所以这里不再重复保存。只需要落盘的动作（登录启动、屏保、多空间）也由界面负责保存。
  */
 class AppController(
     private val paths: AppPaths,
@@ -69,12 +69,28 @@ class AppController(
         applyColorInternal(fill)
     }
 
-    /** 音量 / 声音开关只影响播放，当前版本没有视频播放窗口，设置本身由界面保存。 */
-    override fun setVolume(volume: Float) = Unit
+    override fun setVolume(volume: Float) = refreshVideoPlayback()
 
-    override fun setAudioEnabled(enabled: Boolean) = Unit
+    override fun setAudioEnabled(enabled: Boolean) = refreshVideoPlayback()
 
-    override fun setDisabled(disabled: Boolean) = Unit
+    override fun setVideoPlaybackSpeed(speed: Float) = refreshVideoPlayback()
+
+    override fun setDisabled(disabled: Boolean) {
+        // 从禁用切回可用时，把当前壁纸重新铺起来（包括重新开始视频）
+        if (disabled) refreshVideoPlayback() else restoreOnLaunch()
+    }
+
+    /** 设置已经由界面持久化，这里只把新参数推给正在播放的视频层。 */
+    private fun refreshVideoPlayback() {
+        val settings = settingsStore.load()
+        val normalizedSpeed = VideoPlaybackSpeed.normalize(settings.videoSpeed)
+        backend.updateVideoPlayback(
+            volume = settings.volume,
+            muted = !settings.audioEnabled,
+            speed = if (normalizedSpeed <= 0f) 1f else normalizedSpeed,
+            paused = settings.disabled || normalizedSpeed <= 0f,
+        )
+    }
 
     override fun setLaunchAtLogin(enabled: Boolean) {
         val ok = SystemIntegration.setLaunchAtLogin(enabled)
@@ -139,8 +155,18 @@ class AppController(
                         if (poster == null) {
                             log("video poster unavailable: ${item.name}")
                         } else if (seq == applySeq.get()) {
-                            val ok = backend.applyImage(poster.absolutePath)
-                            log("apply video poster ${item.name} -> $ok (${backend.name})")
+                            val settings = settingsStore.load()
+                            val speed = VideoPlaybackSpeed.normalize(settings.videoSpeed)
+                            val ok = backend.applyVideo(
+                                videoPath = item.path,
+                                posterPath = poster.absolutePath,
+                                volume = settings.volume,
+                                muted = !settings.audioEnabled,
+                                speed = if (speed <= 0f) 1f else speed,
+                                paused = settings.disabled || speed <= 0f,
+                                isStale = { seq != applySeq.get() },
+                            )
+                            log("apply video ${item.name} -> $ok (${backend.name})")
                         }
                     }
                 }
@@ -173,7 +199,7 @@ class AppController(
         }
     }
 
-    /** 视频壁纸用的是静态封面；导入时已经预生成，这里通常直接命中缓存。 */
+    /** 视频壁纸的静态封面；导入时已经预生成，这里通常直接命中缓存。 */
     private fun ensureVideoPoster(item: WallpaperItem): File? = VideoPoster.ensure(paths, item)
 
     private fun currentLibraryItem(id: String?): WallpaperItem? {

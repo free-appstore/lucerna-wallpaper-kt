@@ -42,7 +42,10 @@ import kotlin.time.Duration.Companion.seconds
  * 分页内容自行排布，面板本身不滚动。
  */
 @Composable
-fun LucernaPanel(state: LucernaState, modifier: Modifier = Modifier) {
+fun LucernaPanel(
+    state: LucernaState,
+    modifier: Modifier = Modifier,
+) {
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -56,7 +59,10 @@ fun LucernaPanel(state: LucernaState, modifier: Modifier = Modifier) {
                 memoryMb = rememberMemoryMegabytes(),
                 onClose = { state.actions.quit() },
             )
-            TabBar(current = state.tab, onSelect = state::selectTab)
+            TabBar(
+                current = state.tab,
+                onSelect = state::selectTab,
+            )
             Box(Modifier.weight(1f).fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp)) {
                 when (state.tab) {
                     PanelTab.MINE -> MinePage(state)
@@ -72,7 +78,10 @@ fun LucernaPanel(state: LucernaState, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun PanelHeader(memoryMb: Long, onClose: () -> Unit) {
+private fun PanelHeader(
+    memoryMb: Long,
+    onClose: () -> Unit,
+) {
     Row(
         modifier = Modifier.fillMaxWidth().height(66.dp).padding(start = 16.dp, end = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -80,9 +89,12 @@ private fun PanelHeader(memoryMb: Long, onClose: () -> Unit) {
         FireflyLogo(Modifier.size(40.dp))
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
-            Text("Lucerna", style = LucernaText.title)
             Text(
-                "灵萤 · 桌面壁纸 · 内存 $memoryMb MB",
+                text = "Lucerna",
+                style = LucernaText.title,
+            )
+            Text(
+                text = "灵萤 · 桌面壁纸 · 内存 $memoryMb MB",
                 style = LucernaText.subtitle,
                 modifier = Modifier.padding(top = 3.dp),
             )
@@ -101,7 +113,10 @@ private fun PanelHeader(memoryMb: Long, onClose: () -> Unit) {
 }
 
 @Composable
-private fun TabBar(current: PanelTab, onSelect: (PanelTab) -> Unit) {
+private fun TabBar(
+    current: PanelTab,
+    onSelect: (PanelTab) -> Unit,
+) {
     val tabs = PanelTab.entries
     val spacing = 3.dp
     // 选中状态的滑块在分页之间平移，而不是直接跳过去
@@ -130,7 +145,10 @@ private fun TabBar(current: PanelTab, onSelect: (PanelTab) -> Unit) {
                     .clip(RoundedCornerShape(7.dp))
                     .background(LucernaColors.AccentSoft),
             )
-            Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(spacing)) {
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                horizontalArrangement = Arrangement.spacedBy(spacing),
+            ) {
                 tabs.forEachIndexed { index, tab ->
                     Box(
                         modifier = Modifier
@@ -143,7 +161,7 @@ private fun TabBar(current: PanelTab, onSelect: (PanelTab) -> Unit) {
                         // 文字颜色跟着滑块走：滑块经过时两边的标签一起过渡
                         val distance = abs(progress - index).coerceIn(0f, 1f)
                         Text(
-                            tab.label,
+                            text = tab.label,
                             fontSize = 12.sp,
                             fontWeight = if (tab == current) FontWeight.SemiBold else FontWeight.Normal,
                             color = lerp(LucernaColors.TextSecondary, LucernaColors.Accent, 1f - distance),
@@ -156,7 +174,9 @@ private fun TabBar(current: PanelTab, onSelect: (PanelTab) -> Unit) {
 }
 
 @Composable
-private fun ToastOverlay(state: LucernaState) {
+private fun ToastOverlay(
+    state: LucernaState,
+) {
     val message = state.toast
     LaunchedEffect(message) {
         if (message != null) {
@@ -164,7 +184,10 @@ private fun ToastOverlay(state: LucernaState) {
             state.consumeToast()
         }
     }
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.BottomCenter,
+    ) {
         AnimatedVisibility(
             visible = message != null,
             enter = fadeIn() + slideInVertically { it / 2 },
@@ -178,7 +201,11 @@ private fun ToastOverlay(state: LucernaState) {
                     .border(1.dp, LucernaColors.BorderStrong, RoundedCornerShape(20.dp))
                     .padding(horizontal = 14.dp, vertical = 8.dp),
             ) {
-                Text(message.orEmpty(), fontSize = 11.sp, color = LucernaColors.TextPrimary)
+                Text(
+                    text = message.orEmpty(),
+                    fontSize = 11.sp,
+                    color = LucernaColors.TextPrimary,
+                )
             }
         }
     }

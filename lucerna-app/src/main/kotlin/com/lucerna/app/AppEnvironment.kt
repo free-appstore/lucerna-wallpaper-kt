@@ -4,8 +4,7 @@ import com.lucerna.app.platform.PlatformWallpapers
 import com.lucerna.core.media.Importer
 import com.lucerna.core.paths.AppPaths
 import com.lucerna.core.platform.WallpaperBackend
-import com.lucerna.core.store.LibraryStore
-import com.lucerna.core.store.SettingsStore
+import com.lucerna.db.LucernaDb
 import com.lucerna.ui.state.LucernaState
 import com.lucerna.ui.state.PreviewRequest
 
@@ -13,8 +12,10 @@ import com.lucerna.ui.state.PreviewRequest
 class AppEnvironment {
 
     val paths: AppPaths = AppPaths.system().also { it.ensure() }
-    val settingsStore = SettingsStore(paths)
-    val libraryStore = LibraryStore(paths)
+    /** 所有持久化数据（设置 / 色彩 / 图库元数据）都在这个数据库里。 */
+    val database = LucernaDb.open(paths)
+    val settingsStore = database.settingsStore
+    val libraryStore = database.libraryStore
     val backend: WallpaperBackend = PlatformWallpapers.create()
     /** 桌面端导入后预先生成视频封面：之后「设为壁纸」不用再等抽帧。 */
     val importer = Importer(paths, libraryStore, prewarmVideoPosters = true)
@@ -48,5 +49,6 @@ class AppEnvironment {
     fun shutdown() {
         controller.shutdown()
         tray?.remove()
+        database.close()
     }
 }

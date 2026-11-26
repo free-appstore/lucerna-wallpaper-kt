@@ -54,14 +54,19 @@ import java.io.File
 
 /** 「我的」页：顶部二级分类切换，下方是所选类型的图库。 */
 @Composable
-fun MinePage(state: LucernaState) {
+fun MinePage(
+    state: LucernaState,
+) {
     val images = state.items.filter { it.type == WallpaperType.IMAGE }
     val videos = state.items.filter { it.type == WallpaperType.VIDEO }
     val colors = state.savedColors
 
     if (images.isEmpty() && videos.isEmpty() && colors.isEmpty()) {
         Column(Modifier.fillMaxSize()) {
-            EmptyHint("图库还是空的", "到「导入」页挑几张图片或视频")
+            EmptyHint(
+                title = "图库还是空的",
+                detail = "到「导入」页挑几张图片或视频",
+            )
         }
         return
     }
@@ -78,7 +83,10 @@ fun MinePage(state: LucernaState) {
         )
         when (state.mineFilter) {
             MineFilter.IMAGE -> if (images.isEmpty()) {
-                EmptyHint("还没有图片", "到「导入」页挑几张图片")
+                EmptyHint(
+                    title = "还没有图片",
+                    detail = "到「导入」页挑几张图片",
+                )
             } else {
                 TwoColumnGrid(images) { item ->
                     WallpaperCard(
@@ -93,7 +101,10 @@ fun MinePage(state: LucernaState) {
             }
 
             MineFilter.VIDEO -> if (videos.isEmpty()) {
-                EmptyHint("还没有视频", "到「导入」页导入视频")
+                EmptyHint(
+                    title = "还没有视频",
+                    detail = "到「导入」页导入视频",
+                )
             } else {
                 TwoColumnGrid(videos) { item ->
                     WallpaperCard(
@@ -108,10 +119,17 @@ fun MinePage(state: LucernaState) {
             }
 
             MineFilter.COLOR -> if (colors.isEmpty()) {
-                EmptyHint("还没有色彩壁纸", "在「色彩」页保存后出现在这里")
+                EmptyHint(
+                    title = "还没有色彩壁纸",
+                    detail = "在「色彩」页保存后出现在这里",
+                )
             } else {
                 TwoColumnGrid(colors) { fill ->
-                    ColorCard(fill = fill, selected = fill == state.activeColor, state = state)
+                    ColorCard(
+                        fill = fill,
+                        selected = fill == state.activeColor,
+                        state = state,
+                    )
                 }
             }
         }
@@ -147,7 +165,10 @@ private fun MineFilterBar(
 
 /** 两列卡片；最后一行只有一张时用占位保持半宽。 */
 @Composable
-private fun <T> TwoColumnGrid(items: List<T>, itemContent: @Composable (T) -> Unit) {
+private fun <T> TwoColumnGrid(
+    items: List<T>,
+    itemContent: @Composable (T) -> Unit,
+) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -198,7 +219,8 @@ private fun WallpaperCard(
         ) {
             if (item.type == WallpaperType.IMAGE) {
                 AsyncImage(
-                    model = File(item.thumbnail ?: item.path).toURI().toString(),
+                    // 直接给 File：路径里有空格 / 特殊字符时也按本地文件读取
+                    model = File(item.thumbnail ?: item.path),
                     contentDescription = item.name,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),
@@ -220,14 +242,14 @@ private fun WallpaperCard(
                 modifier = Modifier.align(Alignment.BottomStart).padding(9.dp),
             ) {
                 Text(
-                    item.name,
+                    text = item.name,
                     fontSize = 10.5.sp,
                     color = LucernaColors.TextPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    item.subtitle(),
+                    text = item.subtitle(),
                     fontSize = 8.5.sp,
                     color = LucernaColors.TextTertiary,
                     maxLines = 1,
@@ -253,7 +275,9 @@ private fun WallpaperCard(
 
 /** 视频没有缩略图时用的一张小插画。 */
 @Composable
-private fun VideoPlaceholder(item: WallpaperItem) {
+private fun VideoPlaceholder(
+    item: WallpaperItem,
+) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -272,14 +296,21 @@ private fun VideoPlaceholder(item: WallpaperItem) {
                 .border(1.dp, Color(0x66FFC46B), RoundedCornerShape(13.dp)),
             contentAlignment = Alignment.Center,
         ) {
-            PlayGlyph(Modifier.size(10.dp), color = LucernaColors.Accent)
+            PlayGlyph(
+                modifier = Modifier.size(10.dp),
+                color = LucernaColors.Accent,
+            )
         }
     }
 }
 
 /** 「我的」里保存下来的一份色彩壁纸。 */
 @Composable
-private fun ColorCard(fill: ColorFill, selected: Boolean, state: LucernaState) {
+private fun ColorCard(
+    fill: ColorFill,
+    selected: Boolean,
+    state: LucernaState,
+) {
     val bitmap = remember(fill) {
         ColorRenderer.render(fill, 360, 240).toComposeImageBitmap()
     }
@@ -294,16 +325,32 @@ private fun ColorCard(fill: ColorFill, selected: Boolean, state: LucernaState) {
         },
         state = menuState,
     ) {
-        CardShell(selected = selected, onClick = { state.applyColor(fill) }) {
-            Image(bitmap, contentDescription = "色彩壁纸", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        CardShell(
+            selected = selected,
+            onClick = { state.applyColor(fill) },
+        ) {
+            Image(
+                bitmap = bitmap,
+                contentDescription = "色彩壁纸",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
             Box(
-                Modifier.fillMaxSize().background(
+                modifier = Modifier.fillMaxSize().background(
                     Brush.verticalGradient(0.4f to Color.Transparent, 1f to Color(0xD9000000)),
                 ),
             )
             Column(Modifier.align(Alignment.BottomStart).padding(9.dp)) {
-                Text("色彩壁纸", fontSize = 10.5.sp, color = LucernaColors.TextPrimary)
-                Text(fill.summary(), fontSize = 8.5.sp, color = LucernaColors.TextTertiary)
+                Text(
+                    text = "色彩壁纸",
+                    fontSize = 10.5.sp,
+                    color = LucernaColors.TextPrimary,
+                )
+                Text(
+                    text = fill.summary(),
+                    fontSize = 8.5.sp,
+                    color = LucernaColors.TextTertiary,
+                )
             }
         }
     }
@@ -332,7 +379,7 @@ private fun CardShell(
         content()
         if (selected) {
             Text(
-                "使用中",
+                text = "使用中",
                 fontSize = 8.sp,
                 color = Color(0xFF1A1408),
                 fontWeight = FontWeight.SemiBold,

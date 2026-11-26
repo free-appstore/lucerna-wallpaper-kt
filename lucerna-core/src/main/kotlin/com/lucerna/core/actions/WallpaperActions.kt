@@ -14,6 +14,7 @@ interface WallpaperActions {
     fun applyColor(fill: ColorFill)
     fun setVolume(volume: Float)
     fun setAudioEnabled(enabled: Boolean)
+    fun setVideoPlaybackSpeed(speed: Float)
     fun setDisabled(disabled: Boolean)
     fun setLaunchAtLogin(enabled: Boolean)
     fun setScreensaverWallpaper(enabled: Boolean)

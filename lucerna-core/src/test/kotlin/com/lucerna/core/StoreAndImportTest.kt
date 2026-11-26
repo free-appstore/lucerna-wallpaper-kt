@@ -3,13 +3,11 @@ package com.lucerna.core
 import com.lucerna.core.files.FileBrowser
 import com.lucerna.core.files.ImportFilter
 import com.lucerna.core.media.Importer
-import com.lucerna.core.model.ColorKind
-import com.lucerna.core.model.Settings
+import com.lucerna.core.model.LibraryData
 import com.lucerna.core.model.WallpaperItem
 import com.lucerna.core.model.WallpaperType
 import com.lucerna.core.paths.AppPaths
 import com.lucerna.core.store.LibraryStore
-import com.lucerna.core.store.SettingsStore
 import java.awt.Color
 import java.awt.image.BufferedImage
 import java.io.File
@@ -28,31 +26,8 @@ class StoreAndImportTest {
     }
 
     @Test
-    fun `设置读写往返`() {
-        val paths = tempPaths()
-        val store = SettingsStore(paths)
-        val solid = Settings().colorFill.copy(kind = ColorKind.SOLID)
-        val settings = Settings(
-            volume = 0.35f,
-            audioEnabled = true,
-            launchAtLogin = true,
-            colorFill = Settings().colorFill.copy(kind = ColorKind.STEPS, steps = 7),
-            savedColors = listOf(solid),
-        )
-        store.save(settings)
-        val loaded = store.load()
-        assertEquals(0.35f, loaded.volume)
-        assertTrue(loaded.audioEnabled)
-        assertTrue(loaded.launchAtLogin)
-        assertEquals(7, loaded.colorFill.steps)
-        assertEquals(ColorKind.STEPS, loaded.colorFill.kind)
-        assertEquals(listOf(solid), loaded.savedColors)
-    }
-
-    @Test
     fun `图库增删`() {
-        val paths = tempPaths()
-        val store = LibraryStore(paths)
+        val store = MemoryLibraryStore()
         val item = WallpaperItem(
             id = "a",
             name = "a.png",
@@ -79,7 +54,7 @@ class StoreAndImportTest {
             }
         }, "png", source)
 
-        val library = LibraryStore(paths)
+        val library = MemoryLibraryStore()
         val importer = Importer(paths, library)
         val added = importer.importFiles(listOf(source))
         assertEquals(1, added.size)
@@ -105,6 +80,10 @@ class StoreAndImportTest {
         File(dir, "clip.mp4").writeBytes(byteArrayOf(1))
         File(dir, "notes.txt").writeText("x")
         File(dir, ".hidden.png").writeBytes(byteArrayOf(1))
+        // Skia 解不了的格式不该出现在导入列表里
+        File(dir, "shot.heic").writeBytes(byteArrayOf(1))
+        File(dir, "scan.tiff").writeBytes(byteArrayOf(1))
+        File(dir, "wide.avif").writeBytes(byteArrayOf(1))
         File(dir, "sub").mkdirs()
 
         val entries = FileBrowser.list(dir, ImportFilter.ALL)
@@ -126,7 +105,7 @@ class StoreAndImportTest {
         val sourceDir = Files.createTempDirectory("lucerna-src-video").toFile()
         val source = File(sourceDir, "clip.mp4")
         source.writeBytes(byteArrayOf(0, 1, 2, 3))
-        val library = LibraryStore(paths)
+        val library = MemoryLibraryStore()
         val added = Importer(paths, library).importFiles(listOf(source))
         assertEquals(1, added.size)
         assertEquals(WallpaperType.VIDEO, added.first().type)
@@ -138,8 +117,30 @@ class StoreAndImportTest {
         val paths = tempPaths()
         val source = File(Files.createTempDirectory("lucerna-bad").toFile(), "notes.txt")
         source.writeText("hello")
-        val library = LibraryStore(paths)
+        val library = MemoryLibraryStore()
         val added = Importer(paths, library).importFiles(listOf(source))
         assertTrue(added.isEmpty())
+    }
+}
+
+/** 只用来验证导入流程的图库；真正的持久化在 lucerna-db 的测试里覆盖。 */
+private class MemoryLibraryStore : LibraryStore {
+
+    private var data = LibraryData()
+
+    override fun load(): LibraryData = data
+
+    override fun save(data: LibraryData) {
+        this.data = data
+    }
+
+    override fun add(items: List<WallpaperItem>): LibraryData {
+        data = LibraryData((items + data.items).distinctBy { it.id })
+        return data
+    }
+
+    override fun remove(id: String): LibraryData {
+        data = LibraryData(data.items.filterNot { it.id == id })
+        return data
     }
 }

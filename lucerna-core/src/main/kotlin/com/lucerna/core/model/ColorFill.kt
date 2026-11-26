@@ -190,6 +190,12 @@ data class ColorFill(
         const val MIN_STEPS = 2
         const val MAX_STEPS = 20
 
+        /**
+         * 渐变 / 色阶的 8 个预设方向，对应界面九宫格里的 8 个方向键。
+         * 随机配色只会从这些角度里取，不会出现 360° 任意角。
+         */
+        val DIRECTIONS: List<Float> = listOf(0f, 45f, 90f, 135f, 180f, 225f, 270f, 315f)
+
         val DEFAULT_COLORS = listOf(
             Rgb(1.0f, 0.77f, 0.42f),
             Rgb(0.06f, 0.09f, 0.16f),

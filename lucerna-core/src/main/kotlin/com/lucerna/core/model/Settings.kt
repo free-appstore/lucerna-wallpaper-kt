@@ -13,7 +13,7 @@ enum class WallpaperSource {
     COLOR,
 }
 
-/** 菜单栏图标的配色：彩色萤火虫，或纯白剪影。 */
+/** 菜单栏图标的配色：彩色萤火虫，或跟随菜单栏前景色的单色剪影。 */
 @Serializable
 enum class TrayIconStyle {
     @SerialName("color")
@@ -46,7 +46,9 @@ data class Settings(
     val volume: Float = 0.8f,
     /** 是否播放视频壁纸的声音。 */
     val audioEnabled: Boolean = false,
-    /** 禁用后停止动态壁纸播放并隐藏视频窗口。 */
+    /** 视频壁纸播放速度；0 表示暂停，取值见 [VideoPlaybackSpeed]。 */
+    val videoSpeed: Float = 1f,
+    /** 禁用后暂停视频壁纸播放，启动时也不自动恢复。 */
     val disabled: Boolean = false,
     val launchAtLogin: Boolean = false,
     /** 进入屏保时是否保留当前壁纸。 */
@@ -60,6 +62,7 @@ data class Settings(
 ) {
     fun normalized(): Settings = copy(
         volume = volume.coerceIn(0f, 1f),
+        videoSpeed = VideoPlaybackSpeed.normalize(videoSpeed),
         colorFill = colorFill.normalized(),
         // 去重后每份色彩只留一条，避免同一份色彩在「我的」里重复出现
         savedColors = savedColors.map { it.normalized() }.distinct(),

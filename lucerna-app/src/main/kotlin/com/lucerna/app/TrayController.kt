@@ -1,6 +1,8 @@
 package com.lucerna.app
 
+import com.lucerna.app.platform.MacNative
 import com.lucerna.core.model.TrayIconStyle
+import com.lucerna.core.platform.DesktopOs
 import java.awt.AlphaComposite
 import java.awt.BasicStroke
 import java.awt.Color
@@ -11,12 +13,18 @@ import java.awt.TrayIcon
 import java.awt.Shape
 import java.awt.geom.Ellipse2D
 import java.awt.image.BufferedImage
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import javax.swing.SwingUtilities
 
 /**
  * 状态栏常驻图标。
  *
  * 图标按「萤火虫」的原始尺寸绘制，再等比放大到整块画布，让它在菜单栏里尽量占满高度。
- * 彩色模式是萤火虫本来的配色，单色模式是纯白剪影（菜单栏图标一般是白色）。
+ *
+ * 彩色模式是萤火虫本来的配色；单色模式在 macOS 上会把图标标成 template，
+ * 由系统按菜单栏前景色自动渲染成黑色或白色（菜单栏跟随壁纸 / 深浅色变化时也会自动切换）。
+ * 非 macOS 平台没有 template 机制，单色仍然是白色剪影。
  */
 class TrayController(
     initialStyle: TrayIconStyle = TrayIconStyle.COLOR,
@@ -24,6 +32,17 @@ class TrayController(
 ) {
     private val tray = SystemTray.getSystemTray()
     private var lastFireAt = 0L
+    private var style: TrayIconStyle = initialStyle
+
+    /** 连续切换样式时只让最后一次的 template 重试生效。 */
+    @Volatile
+    private var templateVersion = 0
+
+    /** AWT 换图后 native 视图可能晚一两帧才更新，template 要重试几次。 */
+    private val templateScheduler = Executors.newSingleThreadScheduledExecutor { runnable ->
+        Thread(runnable, "lucerna-tray-template").apply { isDaemon = true }
+    }
+
     private val icon = TrayIcon(createTrayImage(initialStyle), "Lucerna 灵萤").apply {
         isImageAutoSize = true
         addActionListener { fire() }
@@ -37,10 +56,41 @@ class TrayController(
 
     /** 切换菜单栏图标配色；图标已经装进菜单栏时立即重绘。 */
     fun setStyle(style: TrayIconStyle) {
+        this.style = style
+        applyIcon(style)
+    }
+
+    private fun applyIcon(style: TrayIconStyle) {
         runCatching {
             icon.image = createTrayImage(style)
+            scheduleTrayTemplate()
             println("[Lucerna] tray icon style=${style.label}")
         }.onFailure { println("[Lucerna] tray icon style failed: ${it.message}") }
+    }
+
+    /**
+     * AWT 每次换图都会生成新的 `NSImage`，template 标记需要重新设置。
+     *
+     * 状态栏视图可能在 `tray.add` 之后的下一次 EDT 循环才出现，所以做几次延迟重试；
+     * 样式连续切换时用 [templateVersion] 丢弃过期的重试。
+     */
+    private fun scheduleTrayTemplate() {
+        if (DesktopOs.current != DesktopOs.MACOS) return
+        val version = ++templateVersion
+        val template = style == TrayIconStyle.MONO
+        for (delayMs in TEMPLATE_RETRY_DELAYS_MS) {
+            templateScheduler.schedule(
+                {
+                    if (version != templateVersion) return@schedule
+                    SwingUtilities.invokeLater {
+                        if (version != templateVersion) return@invokeLater
+                        runCatching { MacNative.setTrayIconTemplate(template) }
+                    }
+                },
+                delayMs,
+                TimeUnit.MILLISECONDS,
+            )
+        }
     }
 
     /** action 与 mouse 事件可能同时到达，250ms 内只处理一次。 */
@@ -59,6 +109,7 @@ class TrayController(
         return runCatching {
             tray.add(icon)
             installed = true
+            scheduleTrayTemplate()
             true
         }.getOrElse {
             println("[Lucerna] 托盘图标安装失败: ${it.message}")
@@ -67,12 +118,16 @@ class TrayController(
     }
 
     fun remove() {
+        templateScheduler.shutdownNow()
         if (!installed) return
         runCatching { tray.remove(icon) }
         installed = false
     }
 
     private companion object {
+        /** 状态栏视图出现 / AWT 换图后重新设置 template 的时间点。 */
+        private val TEMPLATE_RETRY_DELAYS_MS = longArrayOf(0, 80, 250, 600, 1200)
+
         /** 萤火虫的绘制尺寸（坐标系原点）。 */
         private const val DESIGN = 88
 
@@ -125,8 +180,10 @@ class TrayController(
         }
 
         /**
-         * 单色版：整体纯白，部件之间用「透明缝隙」分隔，
-         * 这样既是纯白剪影，又能看清翅膀、腹部和头。
+         * 单色版：整体用白色绘制，部件之间用「透明缝隙」分隔。
+         *
+         * macOS 上这张图会被标记成 template，系统只使用 alpha，自动渲染成黑色或白色；
+         * 非 macOS 平台没有 template 机制，就按白色剪影显示。
          */
         private fun drawMonochromeFirefly(g: Graphics2D, size: Float) {
             val cx = size / 2f

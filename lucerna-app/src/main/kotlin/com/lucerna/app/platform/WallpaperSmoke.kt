@@ -189,7 +189,7 @@ object WallpaperSmoke {
         val deadline = System.currentTimeMillis() + 3000
         var matched = 0
         while (System.currentTimeMillis() < deadline) {
-            matched = MacFullscreenDetector.ownWindows().count { it.second == level }
+            matched = MacFullscreenDetector.ownWindows().count { it.level == level && it.onScreen }
             if (matched >= screens) return matched
             Thread.sleep(120)
         }
