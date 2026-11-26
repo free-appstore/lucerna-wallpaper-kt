@@ -37,7 +37,8 @@ import java.awt.event.WindowFocusListener
 import kotlin.time.Duration.Companion.seconds
 
 private const val PANEL_WIDTH = 392
-private const val PANEL_HEIGHT = 740
+/** 高度正好容纳「色彩」页：头部 66 + 分页 36 + 上下 12 + 页内容 610。 */
+private const val PANEL_HEIGHT = 736
 private const val PREVIEW_WIDTH = 1040
 private const val PREVIEW_HEIGHT = 700
 

@@ -13,6 +13,9 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.unit.dp
 import com.lucerna.ui.theme.LucernaColors
 
@@ -256,5 +259,30 @@ fun CheckGlyph(modifier: Modifier = Modifier, color: Color = Color(0xFF1A1408)) 
             lineTo(w * 0.9f, w * 0.2f)
         }
         drawPath(path, color, style = Stroke(width = w * 0.16f, cap = StrokeCap.Round))
+    }
+}
+
+/** Material refresh 图标的路径（24 单位画布，墨迹大致在 4..20）。 */
+private const val RefreshPathData =
+    "M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-8 8s3.58 8 8 8" +
+        "c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6" +
+        "s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"
+
+private val RefreshPath: Path by lazy {
+    PathParser().parsePathString(RefreshPathData).toPath()
+}
+
+/** 刷新：顺时针的圆形箭头。 */
+@Composable
+fun RefreshGlyph(modifier: Modifier = Modifier, color: Color = LucernaColors.TextSecondary) {
+    Canvas(modifier.size(13.dp)) {
+        val w = size.width
+        // 把 24 单位图标里 4..20 的有效区域铺满画布
+        val scale = w / 16f
+        scale(scale, scale, pivot = Offset.Zero) {
+            translate(-4f, -4f) {
+                drawPath(RefreshPath, color)
+            }
+        }
     }
 }

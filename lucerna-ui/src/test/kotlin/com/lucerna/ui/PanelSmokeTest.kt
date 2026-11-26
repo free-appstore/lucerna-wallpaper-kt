@@ -57,7 +57,7 @@ class PanelSmokeTest {
 
         setContent {
             LucernaTheme {
-                LucernaPanel(state, Modifier.size(392.dp, 740.dp))
+                LucernaPanel(state, Modifier.size(392.dp, 736.dp))
             }
         }
 
@@ -117,7 +117,7 @@ class PanelSmokeTest {
 
         setContent {
             LucernaTheme {
-                LucernaPanel(state, Modifier.size(392.dp, 740.dp))
+                LucernaPanel(state, Modifier.size(392.dp, 736.dp))
             }
         }
 
@@ -168,8 +168,9 @@ class PanelSmokeTest {
     fun `色彩页正好铺满面板且阶数输入受范围约束`() = runComposeUiTest {
         val root = Files.createTempDirectory("lucerna-ui-fit").toFile()
         val paths = AppPaths.at(root).also { it.ensure() }
+        val actions = RecordingActions()
         val library = LibraryStore(paths)
-        val state = LucernaState(paths, SettingsStore(paths), library, RecordingActions(), Importer(paths, library))
+        val state = LucernaState(paths, SettingsStore(paths), library, actions, Importer(paths, library))
         state.selectTab(PanelTab.COLOR)
         state.updateColorDraft(
             ColorFill(
@@ -181,7 +182,7 @@ class PanelSmokeTest {
 
         setContent {
             LucernaTheme {
-                LucernaPanel(state, Modifier.size(392.dp, 740.dp))
+                LucernaPanel(state, Modifier.size(392.dp, 736.dp))
             }
         }
 
@@ -199,6 +200,15 @@ class PanelSmokeTest {
         // 角度 / 阶数并排，两个 label 顶部对齐（左右各自距卡片 10dp）
         val angleLabel = onNodeWithText("角度").getUnclippedBoundsInRoot()
         assertEquals(angleLabel.top.value, steps.top.value, 0.5f)
+
+        // 左下角刷新按钮：方形，高度与右侧主按钮一致，点一下会重新应用当前色彩
+        val refresh = onNodeWithContentDescription("刷新壁纸").getUnclippedBoundsInRoot()
+        val refreshHeight = (refresh.bottom - refresh.top).value
+        assertEquals(38f, refreshHeight, 0.5f)
+        assertEquals(refreshHeight, (refresh.right - refresh.left).value, 0.5f)
+        assertEquals(button.bottom.value, refresh.bottom.value, 0.5f)
+        onNodeWithContentDescription("刷新壁纸").performClick()
+        assertEquals(1, actions.appliedColors.size)
 
         // 阶数输入框：2–20，且不少于 3 个颜色
         onNodeWithText("5").performTextReplacement("12")
@@ -228,7 +238,7 @@ class PanelSmokeTest {
 
         setContent {
             LucernaTheme {
-                LucernaPanel(state, Modifier.size(392.dp, 740.dp))
+                LucernaPanel(state, Modifier.size(392.dp, 736.dp))
             }
         }
 
@@ -260,7 +270,7 @@ class PanelSmokeTest {
 
         setContent {
             LucernaTheme {
-                LucernaPanel(state, Modifier.size(392.dp, 740.dp))
+                LucernaPanel(state, Modifier.size(392.dp, 736.dp))
             }
         }
 
@@ -288,7 +298,7 @@ class PanelSmokeTest {
 
         setContent {
             LucernaTheme {
-                LucernaPanel(state, Modifier.size(392.dp, 740.dp))
+                LucernaPanel(state, Modifier.size(392.dp, 736.dp))
             }
         }
 
@@ -354,7 +364,7 @@ class PanelSmokeTest {
 
         setContent {
             LucernaTheme {
-                LucernaPanel(state, Modifier.size(392.dp, 740.dp))
+                LucernaPanel(state, Modifier.size(392.dp, 736.dp))
             }
         }
 

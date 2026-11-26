@@ -2,6 +2,9 @@
 
 package com.lucerna.ui.pages
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -32,6 +35,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -61,11 +65,14 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.*
 
-/** 三张卡片的标题行高度：方向、阶数、颜色的 label 左侧与顶部保持一致。 */
+/** 颜色卡标题行的高度：右侧的色值输入框与进制切换都是 24dp。 */
 private val CardHeaderHeight = 24.dp
 
 /** 方向 / 阶数一行的高度：够放 22dp 的九宫格，从颜色卡手里让出高度。 */
 private val BottomRowHeight = 114.dp
+
+/** 色彩页各区块之间的统一间距（预览 / 类型 / 编辑卡 / 方向行 / 按钮）。 */
+private val SectionGap = 8.dp
 
 /** 「色彩」页：纯色 / 渐变 / 色阶编辑器。 */
 @Composable
@@ -74,7 +81,7 @@ fun ColorPage(state: LucernaState) {
     Column(Modifier.fillMaxSize()) {
         // 预览与类型选择固定在顶部，下面的编辑区正好铺满剩余高度
         ColorPreview(fill, onReveal = state::openRenders)
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(SectionGap))
 
         Row(
             Modifier.fillMaxWidth(),
@@ -91,7 +98,7 @@ fun ColorPage(state: LucernaState) {
                 )
             }
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(SectionGap))
 
         val withAngle = fill.kind.usesAngle
         ColorEditorCard(
@@ -100,13 +107,13 @@ fun ColorPage(state: LucernaState) {
             stretch = withAngle,
             modifier = if (withAngle) Modifier.weight(1f).fillMaxWidth() else Modifier.fillMaxWidth(),
         )
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(SectionGap))
 
         if (withAngle) {
             val withSteps = fill.kind == ColorKind.STEPS
             Row(
                 modifier = Modifier.height(BottomRowHeight).fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(SectionGap),
             ) {
                 DirectionCard(
                     fill = fill,
@@ -121,18 +128,58 @@ fun ColorPage(state: LucernaState) {
                     )
                 }
             }
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(SectionGap))
         } else {
             Spacer(Modifier.weight(1f))
         }
 
-        PrimaryButton(
-            text = "添加并应用",
-            modifier = Modifier.fillMaxWidth(),
-            onClick = { state.addAndApplyColor(fill) },
-        )
-        Spacer(Modifier.height(4.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth().height(38.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            RefreshButton(onClick = { state.applyColor(fill) })
+            Spacer(Modifier.width(SectionGap))
+            PrimaryButton(
+                text = "添加并应用",
+                modifier = Modifier.weight(1f),
+                onClick = { state.addAndApplyColor(fill) },
+            )
+        }
     }
+}
+
+/** 左下角的刷新按钮：38dp 正方形，与右侧主按钮同高；点击时图标转一整圈。 */
+@Composable
+private fun RefreshButton(onClick: () -> Unit) {
+    val rotation = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+    Box(
+        modifier = Modifier
+            .size(38.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color(0x12FFFFFF))
+            .border(1.dp, LucernaColors.Border, RoundedCornerShape(10.dp))
+            .semantics { contentDescription = "刷新壁纸" }
+            .clickable {
+                onClick()
+                scope.launch {
+                    rotation.snapTo(0f)
+                    rotation.animateTo(360f, tween(durationMillis = 420, easing = FastOutSlowInEasing))
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        RefreshGlyph(
+            Modifier.size(16.dp).graphicsLayer { rotationZ = rotation.value },
+            color = LucernaColors.TextSecondary,
+        )
+    }
+}
+
+/** 卡片标题：贴着 GlassCard 的 10dp 内边距，左上距离一致。 */
+@Composable
+private fun CardLabel(text: String) {
+    Text(text, fontSize = 10.5.sp, color = LucernaColors.TextTertiary)
 }
 
 /** 颜色槽、分量滑杆与色值输入；色块多了自动换行，加减固定在右侧。 */
@@ -151,9 +198,9 @@ private fun ColorEditorCard(
     GlassCard(modifier, padding = 10) {
         Row(
             modifier = Modifier.fillMaxWidth().height(CardHeaderHeight),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalAlignment = Alignment.Top,
         ) {
-            Text("颜色", fontSize = 10.5.sp, color = LucernaColors.TextTertiary)
+            CardLabel("颜色")
             Spacer(Modifier.weight(1f))
             if (decimal) {
                 RgbInputs(current, applyColor)
@@ -351,13 +398,9 @@ private fun DirectionCard(fill: ColorFill, state: LucernaState, modifier: Modifi
     GlassCard(modifier, padding = 10) {
         Box(Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxHeight()) {
-                // 与颜色 / 阶数相同的 24dp 标题行，label 左、上完全对齐
-                Box(
-                    modifier = Modifier.fillMaxWidth().height(CardHeaderHeight),
-                    contentAlignment = Alignment.CenterStart,
-                ) {
-                    Text("角度", fontSize = 10.5.sp, color = LucernaColors.TextTertiary)
-                }
+                // 与颜色 / 阶数相同：label 距卡片左、上都是 10dp
+                CardLabel("角度")
+                Spacer(Modifier.height(4.dp))
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         AngleDial(angle = fill.angle) { angle ->
@@ -402,13 +445,13 @@ private fun DirectionCell(label: String?, angle: Float, fill: ColorFill, state: 
     Box(
         modifier = Modifier
             .size(30.dp)
-            // clip 与 border 用同一个 4dp 圆角，选中时四个角不会被切掉
-            .clip(RoundedCornerShape(4.dp))
+            // clip 与 border 用同一个 6dp 圆角，选中时四个角不会被切掉
+            .clip(RoundedCornerShape(6.dp))
             .background(if (selected) LucernaColors.AccentSoft else Color(0x10FFFFFF))
             .border(
                 1.dp,
                 if (selected) LucernaColors.Accent.copy(alpha = 0.65f) else LucernaColors.Border,
-                RoundedCornerShape(4.dp),
+                RoundedCornerShape(6.dp),
             )
             .clickable { state.updateColorDraft(fill.copy(angle = angle)) },
         contentAlignment = Alignment.Center,
@@ -428,12 +471,9 @@ private fun StepsCard(fill: ColorFill, state: LucernaState, modifier: Modifier =
     val minSteps = fill.colors.size.coerceIn(ColorFill.MIN_STEPS, ColorFill.MAX_STEPS)
     GlassCard(modifier, padding = 10) {
         Column(Modifier.fillMaxSize()) {
-            Row(
-                modifier = Modifier.fillMaxWidth().height(CardHeaderHeight),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("阶数", fontSize = 10.5.sp, color = LucernaColors.TextTertiary)
-            }
+            // 与颜色 / 角度相同：label 距卡片左、上都是 10dp
+            CardLabel("阶数")
+            Spacer(Modifier.height(4.dp))
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     NumericField(
